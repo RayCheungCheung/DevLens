@@ -1,0 +1,58 @@
+{
+  "workspaceRoot": ".",
+  "homeUrl": "",
+  "partition": "persist:devlens-viewport",
+  "mobile": {
+    "width": 375,
+    "height": 812
+  },
+  "ide": {
+    "scheme": "vscode",
+    "entryFile": "src/renderer/src/App.tsx",
+    "entryLine": 1
+  },
+  "ai": {
+    "provider": "mock",
+    "model": "",
+    "baseUrl": "",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "temperature": 0.2,
+    "maxTokens": 900
+  },
+  "interceptor": {
+    "enabled": true,
+    "pauseTimeoutMs": 20000,
+    "maxPaused": 25,
+    "bufferSize": 500
+  },
+  "report": {
+    "outputDir": null
+  },
+  "omnibox": {
+    "searchEngine": "duckduckgo",
+    "historyLimit": 200
+  },
+  "ghost": {
+    "blockTrackers": true
+  },
+  "protection": {
+    "level": "standard"
+  },
+  "wimh": {
+    "startActive": false,
+    "contentProtection": true,
+    "scrubAfterMs": 30000,
+    "clipboard": {
+      "clearAfterMs": 20000,
+      "guardWrites": true,
+      "blockPastes": true
+    }
+  },
+  "ntp": {
+    "servers": [],
+    "openOnStart": false
+  },
+  "mode": {
+    "default": "dev"
+  }
+}

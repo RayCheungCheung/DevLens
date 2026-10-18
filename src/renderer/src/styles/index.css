@@ -1,0 +1,326 @@
+@import 'tailwindcss';
+
+/*
+ * Project Nova design tokens.
+ *
+ * One palette, two moods: `--devlens-accent*` is the only thing that changes between Normal
+ * Mode (quiet, no glow) and Dev Mode (lime, lit). Everything else - surfaces, hairlines,
+ * text - is shared, so the security lock-down never depends on a colour.
+ */
+@theme {
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'SF Mono', ui-monospace, monospace;
+
+  /* Surfaces, darkest to lightest. */
+  --color-ink-950: #06070a;
+  --color-ink-900: #0a0c10;
+  --color-ink-850: #0f1218;
+  --color-ink-800: #151922;
+  --color-ink-750: #1b2029;
+  --color-ink-700: #232935;
+  --color-ink-600: #333b4a;
+  --color-ink-500: #566072;
+  --color-ink-400: #8791a3;
+  --color-ink-300: #b6bfcd;
+  --color-ink-200: #dee4ee;
+  --color-ink-100: #f2f5fa;
+
+  /* Dev accent (lime) and the amber/rose used for warnings and failures. */
+  --color-nova-lime: #a3e635;
+  --color-nova-teal: #2dd4bf;
+  --color-nova-sky: #7dd3fc;
+  --color-nova-amber: #fbbf24;
+  --color-nova-rose: #fb7185;
+  --color-nova-violet: #c4b5fd;
+}
+
+:root {
+  /* Calm defaults; the accents below are overridden per mode. */
+  --devlens-accent: var(--color-nova-teal);
+  --devlens-accent-soft: rgba(45, 212, 191, 0.12);
+  --devlens-accent-line: rgba(45, 212, 191, 0.32);
+  --devlens-glow: transparent;
+  --devlens-hairline: rgba(255, 255, 255, 0.07);
+  --devlens-hairline-strong: rgba(255, 255, 255, 0.13);
+  --devlens-glass: rgba(9, 11, 15, 0.72);
+  --devlens-tab: rgba(255, 255, 255, 0.028);
+  --devlens-tab-active: #0f1218;
+  --devlens-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  /*
+   * Stealth accent: the one token that does not change with the mode.
+   *
+   * A max-protection private tab is neither a dev tool nor a normal page, so it must not inherit
+   * the mode's accent - otherwise the same tab would look like a different thing after a mode
+   * switch, and "this tab is at Level 3" would read as "this is the dev colour".
+   */
+  --devlens-stealth: #a78bfa;
+  --devlens-stealth-soft: rgba(167, 139, 250, 0.14);
+  --devlens-stealth-line: rgba(167, 139, 250, 0.42);
+}
+
+/* Dev Mode: the hacker accent and a soft bloom on the active surfaces. */
+[data-mode='dev'] {
+  --devlens-accent: var(--color-nova-lime);
+  --devlens-accent-soft: rgba(163, 230, 53, 0.12);
+  --devlens-accent-line: rgba(163, 230, 53, 0.34);
+  --devlens-glow: rgba(163, 230, 53, 0.16);
+}
+
+/* Normal Mode: quiet by design - same structure, no bloom. */
+[data-mode='normal'] {
+  --devlens-accent: #9aa6b8;
+  --devlens-accent-soft: rgba(154, 166, 184, 0.1);
+  --devlens-accent-line: rgba(154, 166, 184, 0.22);
+  --devlens-glow: transparent;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-200);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Electron's <webview> is an out-of-process frame: give it a solid surface. */
+  webview {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+  }
+
+  ::selection {
+    background: var(--devlens-accent-soft);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #262c38;
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #38414f;
+    background-clip: content-box;
+  }
+
+  /*
+   * The viewport canvas can scroll, and the mobile frame is scaled to fit the height the
+   * canvas reports. Without a reserved gutter the horizontal scrollbar appears and
+   * disappears as the scale changes, which changes the height again: an endless layout
+   * loop that resizes both guests and floods the scroll sync with bogus positions.
+   */
+  .viewport-canvas {
+    scrollbar-gutter: stable both-edges;
+  }
+}
+
+@media (max-width: 1180px) {
+  [data-toolbar-secondary],
+  [data-status-secondary] {
+    display: none;
+  }
+}
+
+@layer components {
+  /* Frosted chrome: toolbar, tab strip and the sidebar rail. */
+  .nova-glass {
+    background-color: var(--devlens-glass);
+    backdrop-filter: blur(20px) saturate(1.25);
+    border-color: var(--devlens-hairline);
+  }
+
+  /* Floating tab: detached, rounded on top, hairline edged. */
+  .nova-tab {
+    position: relative;
+    background-color: var(--devlens-tab);
+    border: 1px solid var(--devlens-hairline);
+    border-bottom-color: transparent;
+    border-radius: 10px 10px 0 0;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      transform 140ms ease;
+  }
+
+  .nova-tab:hover {
+    background-color: rgba(255, 255, 255, 0.055);
+  }
+
+  .nova-tab--active {
+    background-color: var(--devlens-tab-active);
+    border-color: var(--devlens-hairline-strong);
+    box-shadow: 0 -1px 0 0 var(--devlens-glow), 0 -8px 24px -18px var(--devlens-glow);
+  }
+
+  .nova-tab--active::after {
+    content: '';
+    position: absolute;
+    inset-inline: 10px;
+    top: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--devlens-accent);
+    opacity: 0.85;
+  }
+
+  /*
+   * A private tab keeps its own hairline and its own top rule, active or not: the accent above
+   * says which mode the window is in, and this one says what the tab is. Keeping them separate
+   * means an inactive private tab is still recognisable at a glance.
+   */
+  .nova-tab--private {
+    background-color: var(--devlens-stealth-soft);
+    border-color: var(--devlens-stealth-line);
+    border-bottom-color: transparent;
+  }
+
+  .nova-tab--private::before {
+    content: '';
+    position: absolute;
+    inset-inline: 10px;
+    top: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--devlens-stealth);
+    opacity: 0.7;
+  }
+
+  /* Content frame under the tabs: seamless with the active tab. */
+  .nova-surface {
+    background-color: var(--devlens-tab-active);
+    border: 1px solid var(--devlens-hairline);
+    box-shadow: var(--devlens-shadow);
+  }
+
+  /* Dashboard and sidebar cards. */
+  .nova-card {
+    background-color: rgba(15, 18, 24, 0.72);
+    border: 1px solid var(--devlens-hairline);
+    border-radius: 8px;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      transform 140ms ease;
+  }
+
+  .nova-card--interactive:hover {
+    border-color: var(--devlens-accent-line);
+    box-shadow: 0 0 0 1px var(--devlens-accent-soft), 0 14px 30px -22px var(--devlens-glow);
+  }
+
+  .nova-card--active {
+    border-color: var(--devlens-accent-line);
+    box-shadow: 0 0 0 1px var(--devlens-accent-soft);
+  }
+
+  /*
+   * The front page surface.
+   *
+   * One vertical wash, tinted by the mode's own glow token: lime in dev mode, transparent in
+   * normal mode. It is a gradient rather than a drawn shape, so the page reads as a single quiet
+   * field behind the hero and the cards instead of a pile of panels.
+   */
+  .nova-ntp {
+    background-color: color-mix(in srgb, var(--color-ink-950) 94%, transparent);
+    background-image: linear-gradient(
+      180deg,
+      var(--devlens-glow),
+      rgba(255, 255, 255, 0.02) 180px,
+      transparent 380px
+    );
+    backdrop-filter: blur(20px) saturate(1.1);
+  }
+
+  /* Omnibox focus: a real ring, not just a border colour change. */
+  .nova-field {
+    background-color: rgba(6, 7, 10, 0.75);
+    border: 1px solid var(--devlens-hairline);
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .nova-field:focus-within {
+    border-color: var(--devlens-accent-line);
+    box-shadow: 0 0 0 3px var(--devlens-accent-soft);
+  }
+
+  /*
+   * Frameless window chrome.
+   *
+   * The window has no native title bar, so the drag region is explicit: the empty part of the
+   * tab strip moves the window, and every control inside it stays clickable. Anything marked
+   * `no-drag` behaves normally, which is what keeps the tabs and the new-tab button working.
+   */
+  .nova-drag {
+    -webkit-app-region: drag;
+  }
+
+  .nova-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /*
+   * Popups that open from inside a drag region.
+   *
+   * The tab strip drags the frameless window, and any menu it renders in the DOM hangs off
+   * that element: hit-testing walks up to the nearest ancestor with an app-region, so without
+   * an explicit opt-out a press on a menu row starts a window drag instead of a click and no
+   * event ever reaches the row. The utility pins the opt-out with !important so an ancestor
+   * region or a later sheet cannot re-capture the panel, and keeps the rows hittable.
+   */
+  .nova-popup {
+    -webkit-app-region: no-drag !important;
+    pointer-events: auto !important;
+  }
+
+  /*
+   * The region is inherited: the tab strip drags the window, and any popup it renders
+   * (the context menus and the new-tab menu hang inside the strip) would drag with it,
+   * swallowing every click on its rows. Menus, listboxes and dialogs opt out explicitly,
+   * so a panel that lands inside a drag region is always fully clickable where it is.
+   */
+  [role="menu"],
+  [role="listbox"],
+  [role="dialog"],
+  [role="combobox"] {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Section label used across the dashboard and the panels. */
+  .nova-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-500);
+  }
+
+  /* Thin divider that reads as a hairline rather than a line. */
+  .nova-divide > * + * {
+    border-top: 1px solid var(--devlens-hairline);
+  }
+}

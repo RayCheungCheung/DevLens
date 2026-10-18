@@ -1,0 +1,9 @@
+{
+    "python.analysis.extraPaths": [
+        "C:\\Users\\HUAWEI\\.kendryte\\k230_canmv_stubs\\2d060bef54b161c3ac65a1c4c1e2789d4ea8a544"
+    ],
+    "python.analysis.stubPath": "C:\\Users\\HUAWEI\\.kendryte\\k230_canmv_pylance\\14c48ef70612f5af\\typings",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none"
+    }
+}

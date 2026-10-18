@@ -1,0 +1,40 @@
+{
+  "name": "devlens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DevLens - a workflow-native developer browser with side-by-side device previews and editor integration.",
+  "author": "DevLens",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:watch": "electron-vite dev --watch",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:preload": "tsc --noEmit -p tsconfig.preload.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:preload && npm run typecheck:web"
+  },
+  "dependencies": {
+    "lucide-react": "^1.57.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.7.2",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  },
+  "allowScripts": {
+    "electron@44.7.2": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}

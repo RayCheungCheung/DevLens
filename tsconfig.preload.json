@@ -1,0 +1,26 @@
+{
+  "include": ["src/preload/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["src/shared/webview.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    /* Preload scripts run inside a renderer, so they need the DOM lib too. */
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"]
+    }
+  }
+}
