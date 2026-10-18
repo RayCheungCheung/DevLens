@@ -92,6 +92,8 @@ export interface DevLensApi {
    * per viewport.
    */
   pageCommand(input: { webContentsId: number; command: PageCommandKind }): Promise<boolean>
+  /** The guest's current zoom, as a whole percentage; 100 means default. */
+  pageZoom(webContentsId: number): Promise<number>
 
   /* Omnibox */
   historyList(limit?: number): Promise<HistoryEntry[]>
@@ -210,6 +212,11 @@ export interface DevLensApi {
   cookiesRemove(input: { url: string; name: string; partition?: string }): Promise<boolean>
   /** The site's own icon, fetched in the main process and returned as a data URL. */
   faviconGet(pageUrl: string): Promise<{ dataUrl: string | null; source: string | null }>
+  /**
+   * DOM-candidate icon: the page's `link[rel*='icon']` hrefs, resolved and fetched in the main
+   * process. Used when the plain `/favicon.ico` request came back empty.
+   */
+  faviconExtract(pageUrl: string, hrefs: string[]): Promise<{ dataUrl: string | null; source: string | null }>
   openSandbox(url: string): Promise<{ ok: boolean; error: string | null }>
 
   /* Max-protection private tabs */

@@ -23,6 +23,7 @@ import { Omnibox } from '@renderer/components/Omnibox'
 import { ModeSwitcher } from '@renderer/components/ModeSwitcher'
 import { ProtectionMenu } from '@renderer/components/ProtectionMenu'
 import { ProfileSwitcher } from '@renderer/components/ProfileSwitcher'
+import { MainMenu } from '@renderer/components/MainMenu'
 import type { BrowserProfile } from '@shared/types'
 
 interface ToolbarProps {
@@ -110,6 +111,34 @@ interface ToolbarProps {
   onProfileCreate: (name: string) => void
   onProfileDelete: (id: string) => void
   onNotice: (message: string) => void
+  /** Main-menu callbacks, in display order. */
+  menu: {
+    profileName: string
+    onOpenProfileMenu: () => void
+    /** Bumped to open the profile popover from the menu's identity row. */
+    profileOpenSignal: number
+    onNewTab: () => void
+    /** Opens a private (WImH) tab in place of the current session. */
+    onNewPrivateTab: () => void
+    onHistory: () => void
+    onBookmarks: () => void
+    onPrint: () => void
+    onSavePage: () => void
+    onFind: () => void
+    onZoomIn: () => void
+    onZoomOut: () => void
+    onZoomReset: () => void
+    /** Reads the active guest's zoom as a whole percentage; shown in the Zoom row. */
+    onGetZoomPercent: () => Promise<number>
+    onSettings: () => void
+    /** Flips the extreme defense (WImH) session on or off. */
+    onToggleDefense: () => void
+    /** Whether the extreme defense session is active right now. */
+    defenseActive: boolean
+    /** Opens the active guest's native DevTools drawer. */
+    onOpenDevTools: () => void
+    onExit: () => void
+  }
 }
 
 export function Toolbar({
@@ -161,7 +190,8 @@ export function Toolbar({
   onProfileSwitch,
   onProfileCreate,
   onProfileDelete,
-  onNotice
+  onNotice,
+  menu
 }: ToolbarProps) {
   // Normal mode renders navigation, the omnibox, the mode switcher and profiles - and nothing
   // that could reach the developer area.
@@ -341,6 +371,27 @@ export function Toolbar({
         onCreate={onProfileCreate}
         onDelete={onProfileDelete}
         onNotice={onNotice}
+        openSignal={menu.profileOpenSignal}
+      />
+      <MainMenu
+        profileName={menu.profileName}
+        onOpenProfileMenu={menu.onOpenProfileMenu}
+        onNewTab={menu.onNewTab}
+        onNewPrivateTab={menu.onNewPrivateTab}
+        onHistory={menu.onHistory}
+        onBookmarks={menu.onBookmarks}
+        onPrint={menu.onPrint}
+        onSavePage={menu.onSavePage}
+        onFind={menu.onFind}
+        onZoomIn={menu.onZoomIn}
+        onZoomOut={menu.onZoomOut}
+        onZoomReset={menu.onZoomReset}
+        onGetZoomPercent={menu.onGetZoomPercent}
+        onSettings={menu.onSettings}
+        onToggleDefense={menu.onToggleDefense}
+        defenseActive={menu.defenseActive}
+        onOpenDevTools={menu.onOpenDevTools}
+        onExit={menu.onExit}
       />
 
       {layout.sidebarToggle === 'end' && (

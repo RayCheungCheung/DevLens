@@ -204,6 +204,21 @@ export function instrumentGuest(contents: WebContents): void {
     emitStatus(guestId, guestViewIds.get(guestId), 'loading', details.url)
   })
 
+  /**
+   * Ctrl + the mouse wheel zooms the guest in real time: wheel up zooms in, wheel out.
+   *
+   * The shell's DOM never sees the wheel - it lands in the guest's web contents - so this lives
+   * in the main process where the zoom state actually is. The clamp matches the menu's zoom, and
+   * `before-input-event` + preventDefault stops the guest's own pinch/zoom from also firing.
+   */
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'mouseWheel' || !input.control) return
+    event.preventDefault()
+    const step = input.wheelDeltaY > 0 ? 0.1 : -0.1
+    const next = Math.max(-5, Math.min(5, contents.getZoomLevel() + step))
+    contents.setZoomLevel(next)
+  })
+
   contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     // -3 == ERR_ABORTED, which fires for every cancelled navigation and is pure noise.
     if (!isMainFrame || errorCode === -3) return

@@ -500,6 +500,12 @@ export type PageCommandKind =
   | 'reload'
   | 'back'
   | 'forward'
+  /** Ask the guest's webContents to print. */
+  | 'print'
+  /** Nudge the guest's zoom by one step; `zoom-reset` restores 100%. */
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-reset'
 
 /* ------------------------------------------------------------------ *
  * WImH extreme defense mode

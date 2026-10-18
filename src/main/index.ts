@@ -63,7 +63,12 @@ import {
   setBookmarkOptions,
   toggleBookmark
 } from './bookmarks'
-import { faviconFor } from './favicon'
+import {
+  faviconFor,
+  faviconFromDomCandidates,
+  loadFaviconSnapshot,
+  saveFaviconSnapshot
+} from './favicon'
 import { openInIde } from './ide'
 import { scanLocalServers } from './local-servers'
 import {
@@ -370,11 +375,30 @@ function registerIpcHandlers(): void {
         case 'forward':
           target.navigationHistory.canGoForward() && target.navigationHistory.goForward()
           return true
+        case 'print':
+          target.print({ silent: false, printBackground: true })
+          return true
+        case 'zoom-in':
+          target.setZoomLevel(Math.min(target.getZoomLevel() + 0.5, 5))
+          return true
+        case 'zoom-out':
+          target.setZoomLevel(Math.max(target.getZoomLevel() - 0.5, -5))
+          return true
+        case 'zoom-reset':
+          target.setZoomLevel(0)
+          return true
         default:
           return false
       }
     }
   )
+
+  /** Read a guest's zoom, in percent, for the menu's zoom row. 0 means 100%. */
+  ipcMain.handle(IPC.pageZoom, (_event, webContentsId?: number): number => {
+    const target = webContentsId ? webContents.fromId(webContentsId) : null
+    if (!target || target.isDestroyed()) return 0
+    return Math.round((1 + target.getZoomLevel()) * 100)
+  })
 
   /* ---------------- Omnibox ---------------- */
 
@@ -428,6 +452,13 @@ function registerIpcHandlers(): void {
 
   // Tab-strip icons: fetched in this process, handed to the renderer as a data URL.
   ipcMain.handle(IPC.faviconGet, (_event, pageUrl: string) => faviconFor(String(pageUrl ?? '')))
+  // DOM-candidate path: renderer has read the page's `link[rel*='icon']` hrefs; main resolves
+  // and fetches the winner so the CSP `img-src` never has to open up.
+  ipcMain.handle(
+    IPC.faviconExtract,
+    (_event, pageUrl: string, hrefs: string[] | null) =>
+      faviconFromDomCandidates(String(pageUrl ?? ''), Array.isArray(hrefs) ? hrefs : [])
+  )
 
   ipcMain.handle(
     IPC.bookmarksToggle,
@@ -819,6 +850,10 @@ function wireGuestInstrumentation(): void {
 }
 
 function boot(): void {
+  // Seed the icon cache from the last run's snapshot, so pinned tabs have their logos before
+  // the first `faviconFor` fires.
+  loadFaviconSnapshot()
+
   /**
    * A Chrome UA for everything this app loads.
    *
@@ -930,6 +965,7 @@ function boot(): void {
     flushHistory()
     flushBookmarks()
     flushPreferences()
+    saveFaviconSnapshot()
   })
 }
 

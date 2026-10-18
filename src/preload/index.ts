@@ -136,6 +136,8 @@ const api: DevLensApi = {
   /** Runs a page command in a guest, addressed by its webContents id. */
   pageCommand: (input: { webContentsId: number; command: PageCommandKind }): Promise<boolean> =>
     ipcRenderer.invoke(IPC.pageCommand, input),
+  pageZoom: (webContentsId: number): Promise<number> =>
+    ipcRenderer.invoke(IPC.pageZoom, webContentsId),
 
   /* ---------------- Omnibox ---------------- */
 
@@ -234,6 +236,16 @@ const api: DevLensApi = {
   /** The site's own icon, fetched by main and returned as a data URL. */
   faviconGet: (pageUrl: string): Promise<{ dataUrl: string | null; source: string | null }> =>
     ipcRenderer.invoke(IPC.faviconGet, pageUrl),
+
+  /**
+   * DOM-candidate icon: the page's `link[rel*='icon']` hrefs, resolved and fetched by main.
+   * Used when the plain `/favicon.ico` request came back empty.
+   */
+  faviconExtract: (
+    pageUrl: string,
+    hrefs: string[]
+  ): Promise<{ dataUrl: string | null; source: string | null }> =>
+    ipcRenderer.invoke(IPC.faviconExtract, pageUrl, hrefs),
 
   /** Ghost mode: isolated in-memory session with trackers blocked. */
   ghostState: (): Promise<GhostSessionState> => ipcRenderer.invoke(IPC.ghostState),

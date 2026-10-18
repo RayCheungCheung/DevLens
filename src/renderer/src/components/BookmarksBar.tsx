@@ -166,7 +166,7 @@ export function BookmarksBar({
         if (dragId.current) event.preventDefault()
       }}
       onDrop={dropOnBlank}
-      className="flex h-8 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-[var(--devlens-hairline)] bg-ink-950/80 px-2"
+      className="flex h-8.5 shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--devlens-hairline)] bg-ink-950/80 px-3 py-1.5"
     >
       {items.map((node) => {
         const drop = hint?.id === node.id ? hint.position : null
@@ -217,7 +217,7 @@ export function BookmarksBar({
                 title={`${node.title ?? 'Folder'} - click for its contents, right-click for options`}
                 onClick={(event) => openDropdown(event, node.id, 300)}
                 onContextMenu={(event) => openMenu(event, { kind: 'folder', node })}
-                className="flex h-6 max-w-[180px] cursor-grab items-center gap-1.5 rounded px-1.5 text-left transition-colors hover:bg-white/[0.06]"
+                className="flex h-7 max-w-[180px] cursor-grab items-center gap-2 rounded px-2 text-left transition-colors hover:bg-white/[0.06]"
               >
                 {open ? (
                   <FolderOpen size={12} className="shrink-0 text-[var(--devlens-accent)]" />
@@ -258,7 +258,7 @@ export function BookmarksBar({
       <div
         data-testid="bookmarks-bar-blank"
         aria-hidden="true"
-        className="h-6 min-w-8 flex-1 shrink-0"
+        className="h-7 min-w-8 flex-1 shrink-0"
         title={barSummary(items)}
       />
 
@@ -275,7 +275,7 @@ export function BookmarksBar({
             title="Bookmarks menu and other bookmarks"
             onClick={(event) => openDropdown(event, 'other', 300)}
             onContextMenu={(event) => openMenu(event, { kind: 'blank' })}
-            className="flex h-6 max-w-[160px] items-center gap-1.5 rounded px-1.5 text-left transition-colors hover:bg-white/[0.06]"
+            className="flex h-7 max-w-[160px] items-center gap-2 rounded px-2 text-left transition-colors hover:bg-white/[0.06]"
           >
             <Folder size={12} className="shrink-0 text-ink-400" />
             <span className="truncate text-[11px] text-ink-300">Other bookmarks</span>
@@ -374,7 +374,7 @@ function BarItem({
         onOpen(url, { newTab: true })
       }}
       onContextMenu={onContextMenu}
-      className="flex h-6 max-w-[180px] cursor-grab items-center gap-1.5 rounded px-1.5 text-left transition-colors hover:bg-white/[0.06]"
+      className="flex h-7 max-w-[180px] cursor-grab items-center gap-2 rounded px-2 text-left transition-colors hover:bg-white/[0.06]"
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
         {icon && !broken ? (

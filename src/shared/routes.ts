@@ -11,17 +11,26 @@
  * place is what stops a route from being spelled three ways.
  */
 
-export type InternalRouteId = 'newtab' | 'omnibox-settings'
+export type InternalRouteId = 'newtab' | 'omnibox-settings' | 'history' | 'settings' | 'bookmarks'
 
 export const INTERNAL_ROUTES: Record<InternalRouteId, string> = {
   /** The dashboard is an empty tab's page; it has a URL for completeness, not for typing. */
   newtab: 'devlens:newtab',
-  'omnibox-settings': 'devlens:settings/omnibox'
+  'omnibox-settings': 'devlens:settings/omnibox',
+  /** This profile's visited pages, as a full tab surface - not just the dock's panel. */
+  history: 'devlens:history',
+  /** The profile settings hub; the omnibox section is one of its pages. */
+  settings: 'devlens:settings',
+  /** Saved bookmarks, as a full tab surface. */
+  bookmarks: 'devlens:bookmarks'
 }
 
 const ROUTE_LABELS: Record<InternalRouteId, string> = {
   newtab: 'New tab',
-  'omnibox-settings': 'Omnibox & Engines'
+  'omnibox-settings': 'Omnibox & Engines',
+  history: 'History',
+  settings: 'Settings',
+  bookmarks: 'Bookmarks'
 }
 
 /** The URL for a route id - what a tab's address becomes. */
@@ -72,4 +81,9 @@ export function isInternalUrl(url: string | null | undefined): boolean {
 }
 
 /** Route ids whose page can be opened in a tab by the operator. */
-export const OPENABLE_ROUTES: InternalRouteId[] = ['omnibox-settings']
+export const OPENABLE_ROUTES: InternalRouteId[] = [
+  'omnibox-settings',
+  'history',
+  'settings',
+  'bookmarks'
+]

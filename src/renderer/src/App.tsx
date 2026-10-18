@@ -66,6 +66,9 @@ import { Sidebar, type SidebarPanel } from '@renderer/components/Sidebar'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { NewTabDashboard } from '@renderer/components/NewTabDashboard'
 import { OmniboxSettingsPage } from '@renderer/components/OmniboxSettings'
+import { HistoryPage } from '@renderer/components/HistoryPage'
+import { BookmarksPage } from '@renderer/components/BookmarksPage'
+import { SettingsPage } from '@renderer/components/SettingsPage'
 import { PageContextMenu } from '@renderer/components/PageContextMenu'
 import { DeviceSelector, FoldToggle, resolveDevice } from '@renderer/components/DeviceSelector'
 import { deviceViewport } from '@shared/config'
@@ -315,6 +318,8 @@ export function App() {
    * what the renderer assumed it would do.
    */
   const [privateTabs, setPrivateTabs] = useState<PrivateTabState[]>([])
+  /** Tab ids that have an unread notification (title or URL changed while backgrounded). */
+  const [notifiedTabIds, setNotifiedTabIds] = useState<Set<string>>(new Set())
   /** Tabs already asked about, so a site without an icon is not asked for again. */
   const iconRequests = useRef(new Set<string>())
   /**
@@ -357,7 +362,11 @@ export function App() {
     const stale = tabs.filter((tab) => current[tab.id] && current[tab.id].host !== tab.host)
     if (stale.length > 0) {
       // Leaving a host also clears the "already asked" mark, so coming back asks again.
-      for (const tab of stale) iconRequests.current.delete(`${tab.id}:${current[tab.id].host}`)
+      for (const tab of stale) {
+        const oldHost = current[tab.id].host
+        iconRequests.current.delete(`${tab.id}:${oldHost}`)
+        iconRequests.current.delete(`x:${tab.id}:${oldHost}`)
+      }
       setTabIcons((previous) => {
         const clone = { ...previous }
         for (const tab of stale) delete clone[tab.id]
@@ -400,6 +409,81 @@ export function App() {
       cancelled = true
     }
   }, [tabs])
+  /**
+   * DOM-candidate icon fallback.
+   *
+   * Runs whenever the viewport statuses change (so we pick up the moment a page is ready) or
+   * the tab list changes. For every tab where the plain `/favicon.ico` fetch came back empty -
+   * meaning `tabIcons` has no entry yet, and we haven't already tried extraction for this host -
+   * we read the page's own `link[rel*='icon']` hrefs through `executeJavaScript` on the live
+   * guest, and hand them to the new `faviconExtract` IPC. Main resolves and fetches the best
+   * candidate; the renderer never touches the network.
+   *
+   * Pinned/background tabs stay mounted (their DOM is intact), so this works for them the
+   * moment their guest reports `ready`. A host we have already asked about is not re-asked:
+   * the marker lives in `iconRequests` under an `x:` prefix, so the two paths co-exist.
+   */
+  useEffect(() => {
+    /** No work to do while the tab list is still settling (navigation just started). */
+    const resolved = tabIconsRef.current
+    const tryExtract = tabs.filter((tab) => {
+      if (tab.private) return false
+      if (!tab.url || !tab.host) return false
+      if (resolved[tab.id]) return false
+      const extractKey = `x:${tab.id}:${tab.host}`
+      if (iconRequests.current.has(extractKey)) return false
+      // The guest must be actually ready - a `loading` or `failed` phase means the DOM is not
+      // what the user is looking at yet, and an empty extraction would pollute the marker.
+      const viewIds: ViewportId[] = ['desktop', 'mobile']
+      return viewIds.some(
+        (viewId) => statuses[tab.id]?.[viewId]?.phase === 'ready'
+      )
+    })
+    if (tryExtract.length === 0) return
+    let cancelled = false
+    for (const tab of tryExtract) iconRequests.current.add(`x:${tab.id}:${tab.host}`)
+
+    void (async () => {
+      for (const tab of tryExtract) {
+        if (cancelled) return
+        // Prefer the desktop frame (the one actually visible in most layouts), fall back to
+        // mobile. Both share the partition, so the same DOM is behind both.
+        const framesForTab = frames.current[tab.id]
+        const handle = framesForTab?.desktop ?? framesForTab?.mobile
+        if (!handle) continue
+        /**
+         * Read the hrefs in the guest's own document. `l.href` is the resolved absolute URL
+         * the browser would follow; `getAttribute('href')` is the raw attribute - we take the
+         * former and only fall back when it is empty. The selector covers every variant of
+         * `rel="icon"` (`shortcut icon`, `apple-touch-icon`, `manifest`-served icons) in one
+         * shot because they all contain the substring `icon`.
+         */
+        const script =
+          'JSON.stringify(Array.from(document.querySelectorAll("link[rel*=icon]"))' +
+          '.map(function(l){return l.href || l.getAttribute("href") || ""})' +
+          '.filter(Boolean))'
+        const raw: unknown = await handle.evaluate(script).catch(() => null)
+        if (cancelled) return
+        if (typeof raw !== 'string') continue
+        let hrefs: string[]
+        try {
+          const parsed = JSON.parse(raw)
+          hrefs = Array.isArray(parsed) ? parsed.filter((h): h is string => typeof h === 'string') : []
+        } catch {
+          continue
+        }
+        if (hrefs.length === 0) continue
+        const result = await window.devlens.faviconExtract(tab.url ?? '', hrefs).catch(() => null)
+        if (cancelled || !result?.dataUrl) continue
+        const dataUrl = result.dataUrl
+        const host = tab.host
+        setTabIcons((previous) => ({ ...previous, [tab.id]: { host, dataUrl } }))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [tabs, statuses])
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
   /** The active tab's icon, but only while it still belongs to the page on screen. */
   const activeSiteIcon =
@@ -435,6 +519,8 @@ export function App() {
    * for it. Closing it drops everything that was observed.
    */
   const [defenseOpen, setDefenseOpen] = useState(false)
+  /** Bumped to ask the profile switcher to open; the main menu's identity row uses it. */
+  const [profileOpenSignal, setProfileOpenSignal] = useState(0)
   /**
    * The page context menu, if one is open.
    *
@@ -1065,6 +1151,13 @@ export function App() {
     (id: string): void => {
       setActiveTabId(id)
       setOmniboxHint(null)
+      // Clear the notification flag now that the user is looking at this tab.
+      setNotifiedTabIds((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     },
     []
   )
@@ -1227,7 +1320,9 @@ export function App() {
    * Entering normal mode closes the panel and moves the selection to an everyday tool: leaving a
    * developer panel open behind a mode switch would be exactly the leak the mode exists to
    * prevent, and leaving the selection on a tool the mode does not offer would make the dock look
-   * broken. The dock itself stays - it is the everyday half of the browser.
+   * broken. The dock itself stays - it is the everyday half of the browser. Switching *back* to
+   * dev mode changes only the highlighted panel when it is unavailable there; it never opens
+   * the dock on the user's behalf - a panel opens only when the operator clicks a tool.
    */
   useEffect(() => {
     if (!isPanelAvailable(mode, activePanel)) {
@@ -1235,12 +1330,6 @@ export function App() {
       setSidebarOpen(false)
       return
     }
-    /**
-     * Entering dev mode shows the developer column, because that is what the mode promises and how
-     * the workspace looked before the dock existed. Normal mode is the one that has to stay clean:
-     * there, a panel is only ever open because the operator clicked a tool for it.
-     */
-    if (mode === 'dev') setSidebarOpen(true)
   }, [activePanel, mode])
 
   /** The toolbar toggle: closes what is open, otherwise asks to open it. */
@@ -1299,8 +1388,18 @@ export function App() {
         const next = { ...bucket, [viewId]: { ...bucket[viewId], ...patch } }
         return { ...previous, [tabId]: next }
       })
+      // Mark the tab as having a new notification when its title or URL changes
+      // and it is not the currently active tab.
+      if ((patch.title !== undefined || patch.url !== undefined) && tabId !== activeTabId) {
+        setNotifiedTabIds((prev) => {
+          if (prev.has(tabId)) return prev
+          const next = new Set(prev)
+          next.add(tabId)
+          return next
+        })
+      }
     },
-    []
+    [activeTabId]
   )
 
   /** The report and the status bar want the real viewport sizes, not the requested ones. */
@@ -2800,6 +2899,71 @@ export function App() {
       }
     }
 
+  /** The main menu on the toolbar. Every row does something real: the shell's own pages open
+     as tabs, page operations reach the active guest, and the DevLens items toggle its own
+     features - nothing in the list pretends. */
+  const menu = {
+    profileName: profiles.find((profile) => profile.active)?.name ?? 'Default',
+    profileOpenSignal,
+    onOpenProfileMenu: () => setProfileOpenSignal((value) => value + 1),
+    onNewTab: () => openTab(null),
+    onNewPrivateTab: () => void openPrivateTab(activeStatus.url || null),
+    onHistory: () => openInternalTab('history'),
+    onBookmarks: () => openInternalTab('bookmarks'),
+    onPrint: () => {
+      const id = activeFrame(activeView)?.guestId()
+      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'print' })
+    },
+    onSavePage: async () => {
+      const frame = activeFrame(activeView)
+      if (!frame) {
+        showStatus('No active page to save')
+        return
+      }
+      try {
+        const html = (await frame.evaluate('document.documentElement.outerHTML')) as string
+        const safe = (activeStatus.title || 'page').replace(/[^a-z0-9]+/gi, '_')
+        const result = await window.devlens.saveTextFile({
+          filename: `${safe}.html`,
+          content: html,
+          title: 'Save Page As'
+        })
+        if (result.cancelled) showStatus('Save cancelled')
+        else if (result.ok) showStatus(`Saved to ${result.path ?? 'unknown'}`)
+        else showStatus(`Save failed: ${result.error ?? 'unknown'}`)
+      } catch {
+        showStatus('Could not save page')
+      }
+    },
+    onFind: () => runFind(''),
+    onZoomIn: () => {
+      const id = activeFrame(activeView)?.guestId()
+      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-in' })
+    },
+    onZoomOut: () => {
+      const id = activeFrame(activeView)?.guestId()
+      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-out' })
+    },
+    onZoomReset: () => {
+      const id = activeFrame(activeView)?.guestId()
+      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-reset' })
+    },
+    onGetZoomPercent: async () => {
+      const id = activeFrame(activeView)?.guestId()
+      if (!id) return 100
+      try {
+        return await window.devlens.pageZoom(id)
+      } catch {
+        return 100
+      }
+    },
+    onSettings: () => openInternalTab('settings'),
+    onToggleDefense: () => void toggleWimh(!(wimh?.active)),
+    defenseActive: Boolean(wimh?.active),
+    onOpenDevTools: () => activeFrame(activeView)?.openGuestDevTools(),
+    onExit: () => window.devlens.windowClose()
+  }
+
   return (
     <div className="flex h-full flex-col bg-ink-950" data-mode={mode}>
       {/* Floating tab strip: the mode tokens are inherited from the root, so the accent
@@ -2817,6 +2981,7 @@ export function App() {
         icons={Object.fromEntries(
           Object.entries(tabIcons).map(([id, entry]) => [id, entry.dataUrl])
         )}
+        notifiedTabIds={notifiedTabIds}
       />
       <Toolbar
         address={address}
@@ -2936,6 +3101,7 @@ export function App() {
         onProfileCreate={(name) => void createProfile(name)}
         onProfileDelete={(id) => void deleteProfile(id)}
         onNotice={showStatus}
+        menu={menu}
       />
 
       {/* The bookmarks toolbar, right under the address bar. It renders nothing at all until
@@ -3292,6 +3458,49 @@ export function App() {
                 settings={omniboxSettings}
                 onChange={saveOmniboxSettings}
                 favicons={customFavicons}
+              />
+            )}
+            {activeInternal === 'history' && (
+              <HistoryPage
+                entries={history}
+                onOpen={(url, options) => {
+                  if (options?.newTab) openInNewTab(url)
+                  else navigate(url)
+                }}
+                onClear={() => {
+                  void window.devlens.historyClear().then(() => {
+                    setHistory([])
+                    showStatus('browsing history cleared')
+                  })
+                }}
+              />
+            )}
+            {activeInternal === 'bookmarks' && (
+              <BookmarksPage
+                bookmarks={bookmarks}
+                onOpen={(url, options) => {
+                  if (options?.newTab) openInNewTab(url)
+                  else navigate(url)
+                }}
+                onRemove={(url) => void removeBookmarkEntry(url)}
+              />
+            )}
+            {activeInternal === 'settings' && (
+              <SettingsPage
+                aiProvider={preferences.aiProvider}
+                onProviderChange={(provider) => {
+                  // The profile owns the choice, so it is written where a restart can find it.
+                  void window.devlens
+                    .preferencesSet({ aiProvider: provider })
+                    .then(setPreferences)
+                    .catch(() => showStatus('could not save that preference'))
+                }}
+                toolbarLayout={toolbarLayout}
+                onLayout={(patch) => void saveToolbarLayout(patch)}
+                profileAsk={profileAsk}
+                onProfileAsk={(ask) => void setAskOnStartup(ask)}
+                profileName={profiles.find((profile) => profile.active)?.name ?? 'Default'}
+                onOpenOmnibox={() => openInternalTab('omnibox-settings')}
               />
             )}
 

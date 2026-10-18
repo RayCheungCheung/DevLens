@@ -275,7 +275,7 @@ export function Sidebar({
         data-testid="dock"
         data-mode={mode}
         aria-label="Dock"
-        className="nova-glass flex w-11 shrink-0 flex-col items-center gap-0.5 border-r py-1.5"
+        className="nova-glass flex w-12 shrink-0 flex-col items-center justify-start gap-1 py-2"
       >
         {mainTools.map((tool) => (
           <DockButton
@@ -524,7 +524,7 @@ function DockButton({ id, label, icon: Icon, active, onClick, badge, mark, hint 
       aria-pressed={active}
       onClick={onClick}
       className={[
-        'relative flex h-8 w-9 shrink-0 items-center justify-center rounded-md transition-colors',
+        'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
         active
           ? 'bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]'
           : 'text-ink-500 hover:bg-white/[0.05] hover:text-ink-200'
@@ -542,7 +542,7 @@ function DockButton({ id, label, icon: Icon, active, onClick, badge, mark, hint 
           <AiMark site={mark.brand} size={16} />
         </span>
       ) : (
-        <Icon size={15} />
+        <Icon size={14} />
       )}
       {badge && (
         <span

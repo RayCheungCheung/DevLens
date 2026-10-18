@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Globe, Loader2, Plus, VenetianMask, VolumeX, X } from 'lucide-react'
 import type { WorkspaceMode } from '@shared/mode'
 import {
@@ -54,6 +54,8 @@ interface TabStripProps {
   canReopen: boolean
   /** data URLs keyed by tab id, resolved in the main process. */
   icons?: Record<string, string>
+  /** Tab ids that have an unread notification (title or URL changed while backgrounded). */
+  notifiedTabIds?: Set<string>
 }
 
 /**
@@ -71,9 +73,39 @@ function hostTint(host: string): string {
   return `hsl(${hash} 45% 42%)`
 }
 
+/**
+ * The site's initial, taken from the *registrable domain* rather than the raw host.
+ *
+ * A naive `host.slice(0, 1)` keys off the left-most label, so `a.notion.so` (or any app or CDN
+ * subdomain) would print that subdomain's first letter - the misleading letter the fallback used
+ * to show. Taking the first label of the two right-most labels (`notion.so` -> `notion` -> `N`)
+ * ties the glyph to the brand the user actually sees. Sub-parts the user typed (a port, `www.`)
+ * are stripped first; two-part public suffixes like `co.uk` are outside the scope of a favicon
+ * fallback and degrade to the last two labels, which is still honest.
+ */
+function domainInitial(host: string): string {
+  let label = host.toLowerCase().trim()
+  if (!label) return ''
+  // Drop a port (`example.com:3000`) - the number is not part of the domain.
+  const portCut = label.indexOf(':')
+  if (portCut !== -1) label = label.slice(0, portCut)
+  label = label.replace(/^www\./, '')
+  if (!label) return ''
+  const parts = label.split('.')
+  // Two or more labels: the domain is the second-to-last, e.g. `a.notion.so` -> `notion`.
+  const base = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+  const initial = base.replace(/[^a-z0-9]/g, '').slice(0, 1)
+  return initial ? initial.toUpperCase() : ''
+}
+
 /** The chip's leading glyph: the site's favicon, or the site's initial. */
 function TabIcon({ tab, icon }: { tab: PageTab; icon?: string }) {
   const [broken, setBroken] = useState(false)
+  // A broken image should not stick once a real data URL arrives: the fetch is asynchronous, so
+  // the icon prop can flip from empty to a valid URL after this component has already errored.
+  useEffect(() => {
+    setBroken(false)
+  }, [icon])
   const internal = internalRouteOf(tab.url)
   if (internal) {
     return (
@@ -99,19 +131,88 @@ function TabIcon({ tab, icon }: { tab: PageTab; icon?: string }) {
       />
     )
   }
-  if (tab.host) {
+  const initial = domainInitial(tab.host)
+  if (initial) {
     return (
       <span
         data-testid="tab-initial"
         aria-hidden="true"
         style={{ backgroundColor: hostTint(tab.host) }}
-        className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] font-mono text-[8px] leading-none text-white/90 uppercase"
+        className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] font-mono text-[8px] leading-none text-white/90"
       >
-        {tab.host.replace(/^www\./, '').slice(0, 1)}
+        {initial}
       </span>
     )
   }
   return <Globe size={11} className="shrink-0 text-ink-500" />
+}
+
+/**
+ * Small dot indicator for background tabs with unread notifications.
+ *
+ * Shown only when the tab is not the active tab AND it has a pending notification
+ * (its title or URL changed while it was backgrounded). Hidden in all other cases.
+ */
+function NotificationDot({ hasNotification }: { hasNotification: boolean }) {
+  if (!hasNotification) return null
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--devlens-accent)]"
+    />
+  )
+}
+
+/**
+ * A pinned tab chip: square, shows only the favicon, no title or close button.
+ * Anchored to the left, separate from the scrollable regular tabs.
+ */
+function PinnedTabChip({
+  tab,
+  icon,
+  active,
+  hasNotification,
+  onSelect,
+  onContextMenu,
+  onAuxClick
+}: {
+  tab: PageTab
+  icon?: string
+  active: boolean
+  /** True only when the background tab has an unread notification. */
+  hasNotification: boolean
+  onSelect: (id: string) => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onAuxClick: (e: React.MouseEvent) => void
+}) {
+  return (
+    <div
+      key={tab.id}
+      data-testid="page-tab"
+      data-pinned="true"
+      data-private={tab.private ? 'true' : 'false'}
+      role="tab"
+      aria-selected={active}
+      aria-label={tab.title || 'Pinned tab'}
+      onClick={() => onSelect(tab.id)}
+      onContextMenu={onContextMenu}
+      onAuxClick={onAuxClick}
+      className={[
+        'nova-tab nova-no-drag relative flex h-9 w-9 shrink-0 items-center justify-center rounded-tl-lg rounded-tr-lg',
+        active ? 'nova-tab--active' : 'bg-ink-900',
+        tab.private ? 'nova-tab--private' : ''
+      ].join(' ')}
+    >
+      <NotificationDot hasNotification={!active && hasNotification} />
+      {tab.private ? (
+        <span className="flex h-5 w-5 items-center justify-center text-[var(--devlens-stealth)]">
+          <VenetianMask size={14} />
+        </span>
+      ) : (
+        <TabIcon tab={tab} icon={icon} />
+      )}
+    </div>
+  )
 }
 
 export function TabStrip({
@@ -124,9 +225,10 @@ export function TabStrip({
   onNewPrivateTab,
   onTabAction,
   canReopen,
-  icons = {}
+  icons = {},
+  notifiedTabIds = new Set()
 }: TabStripProps) {
-  const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
+  const [menuTab, setMenuTab] = useState<{ tabId: string; x: number; y: number } | null>(null)
   /** Where the `+` menu should appear, or null when it is closed. */
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null)
   const newTabButton = useRef<HTMLButtonElement | null>(null)
@@ -147,6 +249,29 @@ export function TabStrip({
     setNewMenu({ x: Math.min(x, Math.max(0, window.innerWidth - 300)), y })
   }
 
+  const handleContextMenu = useCallback(
+    (tabId: string, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenuTab({
+        tabId,
+        x: Math.min(e.clientX, Math.max(0, window.innerWidth - 310)),
+        y: Math.min(e.clientY, Math.max(0, window.innerHeight - 300))
+      })
+    },
+    []
+  )
+
+  const handleAuxClick = useCallback(
+    (tabId: string, e: React.MouseEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      onClose(tabId)
+    },
+    [onClose]
+  )
+
   /** Held long enough: offer both kinds of tab, anchored under the button. */
   const startHold = (): void => {
     cancelHold()
@@ -159,8 +284,6 @@ export function TabStrip({
     }, PRIVATE_TAB_LONG_PRESS_MS)
   }
 
-  const menuTab = menu ? tabs.find((tab) => tab.id === menu.tabId) ?? null : null
-
   return (
     <div
       data-mode={mode}
@@ -168,110 +291,126 @@ export function TabStrip({
       role="tablist"
       aria-label="Open pages"
       /* The strip doubles as the window's drag handle now that the native title bar is gone. */
-      className="nova-drag flex h-9 shrink-0 items-end gap-1 overflow-x-auto bg-ink-950 px-2 pt-1"
+      className="nova-drag flex h-10.5 shrink-0 items-end gap-2 overflow-x-auto bg-ink-950 px-3 py-1.5"
     >
-      {tabs.map((tab) => {
-        const active = tab.id === activeId
-        return (
-          <div
-            key={tab.id}
-            data-testid="page-tab"
-            /* The strip is where "this tab is different" is visible, so the flag is on the
-               chip itself rather than only inside the badge. */
-            data-private={tab.private ? 'true' : 'false'}
-            role="tab"
-            aria-selected={active}
-            aria-label={`${tab.title || 'New tab'}${active ? '' : ''}`}
-            /* The whole chip selects the tab, not only the label inside it: clicking the padding
-               or the gap between two chips used to hit a dead area. */
-            onClick={() => onSelect(tab.id)}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              // Keep the menu inside the window: a right-click near the edge would otherwise
-              // open a panel that runs off it.
-              setMenu({
-                tabId: tab.id,
-                x: Math.min(event.clientX, Math.max(0, window.innerWidth - 310)),
-                y: Math.min(event.clientY, Math.max(0, window.innerHeight - 300))
-              })
-            }}
-            /**
-             * Middle click closes the chip it landed on - the browser gesture everyone expects.
-             * `auxclick` is the event for it (a middle click never fires `click`), so the tab is
-             * not selected first and focus does not jump on the way out.
-             */
-            onAuxClick={(event) => {
-              if (event.button !== 1) return
-              event.preventDefault()
-              event.stopPropagation()
-              onClose(tab.id)
-            }}
-            className={[
-              'nova-tab nova-no-drag group flex h-8 max-w-[220px] min-w-[132px] shrink-0 items-center gap-2 pl-2.5 pr-1.5',
-              active ? 'nova-tab--active' : '',
-              tab.private ? 'nova-tab--private' : ''
-            ].join(' ')}
-          >
-            <button
-              type="button"
-              onClick={(event) => {
-                // The chip handles it too; stopping here keeps the action from firing twice.
-                event.stopPropagation()
-                onSelect(tab.id)
+      {/* Pinned tabs: fixed position on the left, square, only favicon */}
+      {tabs
+        .filter((tab) => tab.pinned)
+        .map((tab) => {
+          const active = tab.id === activeId
+          return (
+            <PinnedTabChip
+              key={tab.id}
+              tab={tab}
+              icon={icons[tab.id]}
+              active={active}
+              hasNotification={notifiedTabIds.has(tab.id)}
+              onSelect={onSelect}
+              onContextMenu={(e) => handleContextMenu(tab.id, e)}
+              onAuxClick={(e) => handleAuxClick(tab.id, e)}
+            />
+          )
+        })}
+
+      {/* Separator if there are both pinned and regular tabs */}
+      {tabs.some((t) => t.pinned) && tabs.some((t) => !t.pinned) && (
+        <div className="nova-no-drag mb-1.5 h-5 w-px shrink-0 bg-white/10" />
+      )}
+
+      {/* Regular tabs: scrollable, show title and close button */}
+      {tabs
+        .filter((tab) => !tab.pinned)
+        .map((tab) => {
+          const active = tab.id === activeId
+          return (
+            <div
+              key={tab.id}
+              data-testid="page-tab"
+              data-private={tab.private ? 'true' : 'false'}
+              role="tab"
+              aria-selected={active}
+              aria-label={tab.title || 'New tab'}
+              onClick={() => onSelect(tab.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setMenuTab({
+                  tabId: tab.id,
+                  x: Math.min(e.clientX, Math.max(0, window.innerWidth - 310)),
+                  y: Math.min(e.clientY, Math.max(0, window.innerHeight - 300))
+                })
               }}
-              title={tab.url ?? 'New tab page'}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-            >
-              {tab.private ? (
-                <span
-                  data-testid="private-tab-badge"
-                  aria-label={`${PRIVATE_TAB_LABEL} tab`}
-                  title={`${PRIVATE_TAB_LABEL} - its own in-memory session, nothing written down`}
-                  className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] bg-[var(--devlens-stealth-soft)] text-[var(--devlens-stealth)]"
-                >
-                  <VenetianMask size={10} />
-                </span>
-              ) : (
-                <TabIcon tab={tab} icon={icons[tab.id]} />
-              )}
-              <span className="min-w-0 flex-1">
-                <span
-                  className={[
-                    'block truncate text-[11px] leading-4',
-                    active ? 'text-ink-100' : 'text-ink-400'
-                  ].join(' ')}
-                >
-                  {tab.title || tab.host || 'New tab'}
-                </span>
-              </span>
-            </button>
-
-            {tab.muted && <VolumeX size={11} className="shrink-0 text-ink-500" aria-label="Muted" />}
-            {tab.unloaded && (
-              <Loader2 size={11} className="shrink-0 text-ink-600" aria-label="Unloaded" />
-            )}
-
-            <button
-              type="button"
-              aria-label={`Close ${tab.title || 'tab'}`}
-              title="Close tab"
-              onClick={(event) => {
-                event.stopPropagation()
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                e.stopPropagation()
                 onClose(tab.id)
               }}
               className={[
-                'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors',
-                active
-                  ? 'text-ink-400 hover:bg-white/10 hover:text-ink-100'
-                  : 'text-ink-600 opacity-0 group-hover:opacity-100 hover:bg-white/10 hover:text-ink-200'
+                'nova-tab nova-no-drag group flex h-9 max-w-[220px] min-w-[132px] shrink-0 items-center gap-2 pl-3 pr-2',
+                active ? 'nova-tab--active' : '',
+                tab.private ? 'nova-tab--private' : ''
               ].join(' ')}
             >
-              <X size={11} />
-            </button>
-          </div>
-        )
-      })}
+              <button
+                type="button"
+                onClick={(e) => {
+                  // The chip handles it too; stopping here keeps the action from firing twice.
+                  e.stopPropagation()
+                  onSelect(tab.id)
+                }}
+                title={tab.url ?? 'New tab page'}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                {tab.private ? (
+                  <span
+                    data-testid="private-tab-badge"
+                    aria-label={`${PRIVATE_TAB_LABEL} tab`}
+                    title={`${PRIVATE_TAB_LABEL} - its own in-memory session, nothing written down`}
+                    className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] bg-[var(--devlens-stealth-soft)] text-[var(--devlens-stealth)]"
+                  >
+                    <VenetianMask size={10} />
+                  </span>
+                ) : (
+                  <TabIcon tab={tab} icon={icons[tab.id]} />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={[
+                      'block truncate text-[11px] leading-5',
+                      active ? 'text-ink-100' : 'text-ink-400'
+                    ].join(' ')}
+                  >
+                    {tab.title || tab.host || 'New tab'}
+                  </span>
+                </span>
+              </button>
+
+              {tab.muted && <VolumeX size={11} className="shrink-0 text-ink-500" aria-label="Muted" />}
+              {tab.unloaded && (
+                <Loader2 size={11} className="shrink-0 text-ink-600" aria-label="Unloaded" />
+              )}
+
+              <button
+                type="button"
+                aria-label={`Close ${tab.title || 'tab'}`}
+                title="Close tab"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClose(tab.id)
+                }}
+                className={[
+                  'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors',
+                  active
+                    ? 'text-ink-400 hover:bg-white/10 hover:text-ink-100'
+                    : 'text-ink-600 opacity-0 group-hover:opacity-100 hover:bg-white/10 hover:text-ink-200'
+                ].join(' ')}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )
+        })}
 
       <button
         type="button"
@@ -322,24 +461,27 @@ export function TabStrip({
         />
       )}
 
-      {menu && menuTab && (
+      {menuTab && (
         <TabContextMenu
-          x={menu.x}
-          y={menu.y}
-          tab={menuTab}
+          x={menuTab.x}
+          y={menuTab.y}
+          tab={tabs.find((t) => t.id === menuTab.tabId) ?? { id: '', title: '', url: null }}
           canReopen={canReopen}
           context={{
-            index: tabs.findIndex((tab) => tab.id === menuTab.id),
+            index: tabs.findIndex((tab) => tab.id === menuTab.tabId),
             total: tabs.length,
             hasDuplicates: tabs.some(
               (tab) =>
-                tab.id !== menuTab.id && Boolean(tab.url) && tab.url === menuTab.url
+                tab.id !== menuTab.tabId && Boolean(tab.url) && tab.url === (tabs.find((t) => t.id === menuTab.tabId)?.url)
             )
           }}
           onAction={onTabAction}
-          onClose={() => setMenu(null)}
+          onClose={() => setMenuTab(null)}
         />
       )}
     </div>
   )
 }
+
+
+

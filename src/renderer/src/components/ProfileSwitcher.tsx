@@ -9,6 +9,11 @@ interface ProfileSwitcherProps {
   onCreate: (name: string) => void
   onDelete: (id: string) => void
   onNotice: (message: string) => void
+  /**
+   * A counter the parent bumps to open the profile popover programmatically -
+   * e.g. from the main menu's identity row. Zero (or omitted) never opens it.
+   */
+  openSignal?: number
 }
 
 /**
@@ -24,7 +29,8 @@ export function ProfileSwitcher({
   onSwitch,
   onCreate,
   onDelete,
-  onNotice
+  onNotice,
+  openSignal
 }: ProfileSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
@@ -41,6 +47,11 @@ export function ProfileSwitcher({
     document.addEventListener('mousedown', onDocumentPointerDown)
     return () => document.removeEventListener('mousedown', onDocumentPointerDown)
   }, [open])
+
+  /** The parent's "open the menu for me" signal; a new non-zero value wins. */
+  useEffect(() => {
+    if (openSignal) setOpen(true)
+  }, [openSignal])
 
   return (
     <div ref={containerRef} className="relative shrink-0">

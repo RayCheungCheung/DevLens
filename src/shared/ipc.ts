@@ -66,6 +66,8 @@ export const IPC = {
   clipboardRead: 'devlens:clipboard:read',
   /** renderer -> main (invoke): run a page command the shell's context menu asked for. */
   pageCommand: 'devlens:page:command',
+  /** renderer -> main (invoke): the current zoom level of a guest, for the menu's zoom row. */
+  pageZoom: 'devlens:page:zoom',
 
   /* Omnibox ----------------------------------------------------------- */
   /** renderer -> main (invoke): recent visited pages for suggestions. */
@@ -135,6 +137,11 @@ export const IPC = {
   viewportFindResult: 'devlens:viewport:find-result',
   /** renderer -> main (invoke): the site's icon, returned as a data URL. */
   faviconGet: 'devlens:favicon:get',
+  /**
+   * renderer -> main (invoke): icon from the page's own `link[rel*='icon']` hrefs, returned as
+   * a data URL. A renderer-side DOM read feeds the hrefs; main filters and fetches the winner.
+   */
+  faviconExtract: 'devlens:favicon:extract',
   /** renderer -> main (invoke): enter the isolated ghost session. */
   ghostEnter: 'devlens:ghost:enter',
   /** renderer -> main (invoke): leave the ghost session. */
