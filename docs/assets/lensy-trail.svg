@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="70" viewBox="0 0 220 70" role="img" aria-labelledby="title desc">
+  <title id="title">Lensy's trail</title>
+  <desc id="desc">A playful trail of cyan footprints and a sparkle.</desc>
+  <g fill="#2dd4bf">
+    <circle cx="28" cy="46" r="7" opacity=".5"/>
+    <circle cx="43" cy="34" r="5" opacity=".42"/>
+    <circle cx="58" cy="28" r="4" opacity=".34"/>
+    <circle cx="79" cy="43" r="7" opacity=".65"/>
+    <circle cx="94" cy="31" r="5" opacity=".54"/>
+    <circle cx="109" cy="25" r="4" opacity=".43"/>
+  </g>
+  <path d="M150 27l4 8.8 8.8 4-8.8 4-4 8.8-4-8.8-8.8-4 8.8-4z" fill="#2dd4bf"/>
+  <path d="M176 51H204" stroke="#2dd4bf" stroke-width="3" stroke-linecap="round" opacity=".5"/>
+</svg>

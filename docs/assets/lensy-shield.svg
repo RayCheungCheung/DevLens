@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220" role="img" aria-labelledby="title desc">
+  <title id="title">Lensy holding a shield</title>
+  <desc id="desc">Lensy stands behind a shield with a check mark.</desc>
+  <path d="M87 70V47M143 70V47" fill="none" stroke="#2dd4bf" stroke-width="7" stroke-linecap="round"/>
+  <rect x="72" y="63" width="86" height="82" rx="28" fill="#2dd4bf" fill-opacity=".12" stroke="#2dd4bf" stroke-opacity=".6" stroke-width="4"/>
+  <rect x="81" y="72" width="68" height="62" rx="20" fill="#081014" stroke="#2dd4bf" stroke-width="3"/>
+  <circle cx="101" cy="98" r="11" fill="#2dd4bf"/>
+  <circle cx="101" cy="98" r="4.5" fill="#ecfeff"/>
+  <circle cx="130" cy="98" r="3.8" fill="#2dd4bf"/>
+  <path d="M79 131L91 140M151 131L139 140" fill="none" stroke="#2dd4bf" stroke-width="5" stroke-linecap="round"/>
+  <path d="M110 121L159 140V166C159 188 136 201 110 211C84 201 61 188 61 166V140Z" fill="#2dd4bf" stroke="#ecfeff" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M91 165L105 179L132 149" fill="none" stroke="#081014" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M176 78l4 8.8 8.8 4-8.8 4-4 8.8-4-8.8-8.8-4 8.8-4z" fill="#2dd4bf"/>
+</svg>

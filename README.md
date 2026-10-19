@@ -55,6 +55,12 @@ The current regression baseline is 63/63 settings/dashboard checks, 23/23 profil
 11/11 About checks, plus the focused icon, wallpaper, quote, download, font and browsing-data
 suites described below.
 
+<p align="right">
+  <img src="docs/assets/lensy-peek.svg" width="130" alt="Lensy peeking in beside the verification notes" />
+  <br />
+  <sub>Lensy checked the tests too.</sub>
+</p>
+
 ## What is implemented
 
 **Dual-viewport canvas.** The same URL renders in a Mobile frame (375x812 by default,
@@ -261,6 +267,10 @@ prompt and streams an answer - still exists behind `aiAsk` and is still refused 
 because it has nothing to attach when nothing is captured. The assistant panel no longer drives
 it: the panel is a window onto the site, not a competitor to it.
 
+<p align="right">
+  <img src="docs/assets/lensy-shield.svg" width="130" alt="Lensy holding a shield beside the protection documentation" />
+</p>
+
 ## Protection levels
 
 The security badge in the toolbar is the browser's privacy dial - click it and pick a level. It
@@ -333,6 +343,12 @@ Deleting a profile wipes its storage. Isolation modes layer on top: ghost (`*`) 
 defense put the views on their in-memory partitions, and leaving them returns to the active
 profile. The protection level stays per-session rather than per-profile on purpose - a stored
 privacy preference is itself something written to disk.
+
+<p align="right">
+  <img src="docs/assets/lensy-reading.svg" width="150" alt="Lensy reading the omnibox documentation" />
+  <br />
+  <sub>Lensy is reading this section too.</sub>
+</p>
 
 ## Omnibox
 
@@ -715,6 +731,8 @@ the card stays in standby until one is configured rather than pretending to be c
   macOS Dock marks across Standard, Minimal, Retro and Special collections. The picker and the
   native rasterizer share the same vector artwork; every design carries a different hidden Lensy
   easter egg, such as a peeking head, eyes in a node, a cable-like tail or antenna.
+
+<!-- Lensy easter egg: each Browser Icon hides a different piece of Lensy. Find all seventeen. -->
 - Fonts grids independently choose six installed interface families and five developer mono
   families, with a large live specimen that shows the actual glyphs. Choices update the shell
   through `--font-sans` / `--font-mono` and persist per profile with safe fallbacks for older
@@ -912,6 +930,10 @@ URL according to that preference.
     `DEVLENS_GHOST_BLOCK_TRACKERS`, `DEVLENS_WIMH`, `DEVLENS_CLIPBOARD_TTL_MS`,
     `DEVLENS_NTP_ON_START`.
     Note that the automated suites assume the dev default.
+
+<p align="right">
+  <img src="docs/assets/lensy-hanging.svg" width="125" alt="Lensy hanging upside down above the AI provider documentation" />
+</p>
 
 ## AI providers
 
@@ -1155,6 +1177,17 @@ history opens the project's GitHub releases page. The Discord shortcut retains t
 Verify the About page's routing, preference persistence, profile isolation and rendered content
 from the workspace root with `node work/verify/verify-about.cjs`. Run `npm run typecheck` in
 `outputs/devlens` for all three TypeScript projects (`tsc --noEmit`).
+
+<p align="center">
+  <img src="docs/assets/lensy-trail.svg" width="220" alt="A trail of cyan Lensy footprints" />
+</p>
+
+<details>
+  <summary><sub>Lensy's field note</sub></summary>
+  <sub>If you found this, Lensy says: inspect everything, including the README. The footprints continue in every Browser Icon and in the About page's version card.</sub>
+</details>
+
+<!-- Secret checkpoint: Lensy was here. Try devlens:changelog and devlens:settings/about. -->
 
 ## Sensible next steps
 
