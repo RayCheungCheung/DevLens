@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220" role="img" aria-labelledby="title desc">
+  <title id="title">Lensy, the DevLens mascot</title>
+  <desc id="desc">A friendly lens-shaped robot with cyan eyes, a smile, antennae and a small sparkle.</desc>
+  <g fill="none" stroke="#2dd4bf" stroke-width="5" stroke-linecap="round">
+    <path d="M145 53V35M215 53V35"/>
+  </g>
+  <rect x="125" y="47" width="110" height="103" rx="34" fill="#2dd4bf" fill-opacity="0.12" stroke="#2dd4bf" stroke-opacity="0.55" stroke-width="4"/>
+  <rect x="137" y="59" width="86" height="79" rx="27" fill="#081014" stroke="#2dd4bf" stroke-width="3"/>
+  <circle cx="164" cy="91" r="14" fill="#2dd4bf"/>
+  <circle cx="164" cy="91" r="6" fill="#ecfeff"/>
+  <circle cx="197" cy="91" r="5" fill="#2dd4bf"/>
+  <path d="M159 111Q180 128 201 111" fill="none" stroke="#ecfeff" stroke-width="5" stroke-linecap="round"/>
+  <g fill="none" stroke="#2dd4bf" stroke-width="5" stroke-linecap="round">
+    <path d="M139 139V153M221 139V153"/>
+  </g>
+  <path d="M255 61l3.6 7.9 7.9 3.6-7.9 3.6-3.6 7.9-3.6-7.9-7.9-3.6 7.9-3.6z" fill="#2dd4bf"/>
+  <circle cx="102" cy="91" r="4" fill="#2dd4bf" opacity=".7"/>
+  <path d="M94 128l-10-5M96 47l-10-5" stroke="#2dd4bf" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+</svg>

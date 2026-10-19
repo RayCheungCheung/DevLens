@@ -1,5 +1,11 @@
 # DevLens
 
+<p align="center">
+  <img src="docs/assets/lensy.svg" alt="Lensy, the DevLens mascot" width="300" />
+</p>
+
+<p align="center"><em>Lensy keeps an eye on both viewports.</em></p>
+
 A workflow-native developer browser: one URL previewed in two device frames at once, with a
 live console/network feed, an HTTP interceptor and repeater, live design/CSS overrides, a
 recon report and an AI debugger - plus one-click hand-off to your editor.
