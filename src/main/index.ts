@@ -1,6 +1,7 @@
 import { extname, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { platform, arch, version as osVersion } from 'node:os'
 import {
   app,
   BrowserWindow,
@@ -42,7 +43,8 @@ import type {
   SaveTextResult,
   SessionProfileId,
   WimhState,
-  WorkspaceEntry
+  WorkspaceEntry,
+  AboutInfo
 } from '../shared/types'
 import { isProtectionLevel, type ProtectionLevel } from '../shared/protection'
 import { abort as abortAi, ask as askAi, describeProvider } from './ai'
@@ -73,6 +75,7 @@ import {
   saveFaviconSnapshot
 } from './favicon'
 import { openInIde } from './ide'
+import { listIdeOptions, schemeForIde } from './ide-detect'
 import { scanLocalServers } from './local-servers'
 import {
   configureMode,
@@ -122,7 +125,7 @@ import {
   setLaunchpadSession,
   setPreferences
 } from './preferences'
-import type { ProfilePreferences } from '../shared/preferences'
+import type { ProfilePreferences, ProfilePreferencesPatch } from '../shared/preferences'
 import type { OmniboxSettings } from '../shared/omnibox-settings'
 import type {
   LaunchpadSession,
@@ -131,8 +134,20 @@ import type {
 } from '../shared/launchpad'
 import type { ShieldRules } from '../shared/privacy'
 import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
+import { normalizeAppIconStyle } from '../shared/app-icon-art'
 import { appIconFor } from './app-icons'
 import { profileDiskUsage } from './storage'
+import {
+  cleanupOnExit,
+  clearBrowsingData,
+  needsExitCleanup,
+  runRetentionCleanup
+} from './browsing-data'
+import type {
+  ClearBrowsingDataRequest,
+  ClearBrowsingDataResult,
+  ProfileDiskUsage
+} from '../shared/privacy'
 import {
   closePrivateTab,
   configurePrivateTabs,
@@ -180,10 +195,16 @@ import {
 } from './workspaces'
 import { applyModeMenu, createShellWindow, isGuestContents } from './window'
 import { cleanUserAgent } from './user-agent'
+import { attachDownloadSession } from './downloads'
 
 const config = loadConfig()
 
 let shellWindow: BrowserWindow | null = null
+let startupGateCompleted = false
+let exitCleanupDone = false
+let exitCleanupRunning = false
+let exitHookRegistered = false
+let retentionTimer: NodeJS.Timeout | null = null
 
 function sendToShell(channel: string, payload: unknown): void {
   if (shellWindow && !shellWindow.isDestroyed()) {
@@ -221,7 +242,10 @@ function registerIpcHandlers(): void {
        * straight in and the prompt appears as soon as there is more than one identity.
        */
       profileAsk:
-        profilePromptEnabled(config.profileAsk) && askOnStartupNow() && listProfiles().length > 1,
+        profilePromptEnabled(config.profileAsk) &&
+        askOnStartupNow() &&
+        listProfiles().length > 1 &&
+        !startupGateCompleted,
       profileId: activeProfileId(),
       searchEngine: config.omnibox.searchEngine,
       historyLimit: config.omnibox.historyLimit,
@@ -243,9 +267,28 @@ function registerIpcHandlers(): void {
 
   // renderer -> main: "Open in VS Code" / click-to-source from the log panel.
   ipcMain.handle(IPC.openInIde, async (_event, request: OpenInIdeRequest): Promise<OpenInIdeResult> => {
+    const ideId = preferencesNow().developer.ideId
+    if (!preferencesNow().developer.ideEnabled) {
+      return {
+        ok: false,
+        uri: null,
+        resolvedPath: null,
+        error: 'Open in editor is turned off in Developer workspace settings.'
+      }
+    }
+    const scheme = await schemeForIde(ideId)
+    if (!scheme) {
+      return {
+        ok: false,
+        uri: null,
+        resolvedPath: null,
+        error: 'The selected editor is not installed. Choose another editor in Developer workspace settings.'
+      }
+    }
     // Click-to-source always resolves inside whichever workspace is active.
-    return openInIde(request, config, activeWorkspace(config.workspaceRoot))
+    return openInIde(request, config, activeWorkspace(config.workspaceRoot), scheme)
   })
+  ipcMain.handle(IPC.ideList, () => listIdeOptions())
 
   /* ---------------- AI debugger ---------------- */
 
@@ -670,9 +713,38 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.preferencesSet,
-    (_event, patch: Partial<ProfilePreferences>): ProfilePreferences =>
+    (_event, patch: ProfilePreferencesPatch): ProfilePreferences =>
       broadcastPreferences(setPreferences(patch ?? {}))
   )
+
+  /* ---------------- About / system info ---------------- */
+
+  ipcMain.handle(IPC.aboutInfo, (): AboutInfo => {
+    return {
+      version: app.getVersion(),
+      electron: process.versions.electron ?? '',
+      node: process.versions.node ?? '',
+      chromium: process.versions.chrome ?? '',
+      platform: platform(),
+      arch: arch(),
+      osVersion: osVersion(),
+      updateStatus: 'unavailable'
+    }
+  })
+
+  ipcMain.handle(IPC.downloadsDefaultDirectory, () => app.getPath('downloads'))
+  ipcMain.handle(IPC.downloadsPickDirectory, async (): Promise<boolean> => {
+    const profileId = activeProfileId()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Save files to…',
+      defaultPath: preferencesNow().downloads.directory || app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory']
+    }
+    const result = shellWindow ? await dialog.showOpenDialog(shellWindow, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0] || activeProfileId() !== profileId) return false
+    broadcastPreferences(setPreferences({ downloads: { directory: result.filePaths[0] } }))
+    return true
+  })
 
   const systemStateNow = (): LaunchpadSystemState => ({
     isDefaultBrowser:
@@ -761,7 +833,30 @@ function registerIpcHandlers(): void {
     }
   )
 
-  ipcMain.handle(IPC.privacyDiskUsage, () => profileDiskUsage())
+  ipcMain.handle(IPC.privacyDiskUsage, async (): Promise<ProfileDiskUsage> => {
+    const usage = profileDiskUsage()
+    const cacheBytes = await session
+      .fromPartition(activeProfilePartition(), { cache: true })
+      .getCacheSize()
+      .catch(() => 0)
+    return { ...usage, bytes: usage.bytes + cacheBytes, cacheBytes }
+  })
+
+  ipcMain.handle(
+    IPC.privacyClearBrowsingData,
+    (_event, request?: ClearBrowsingDataRequest): Promise<ClearBrowsingDataResult> =>
+      clearBrowsingData({
+        cookies: request?.cookies === true,
+        cache: request?.cache === true,
+        history: request?.history === true,
+        storage: request?.storage === true
+      })
+  )
+
+  ipcMain.handle(IPC.privacyRunRetentionCleanup, async (): Promise<boolean> => {
+    await runRetentionCleanup()
+    return true
+  })
 
   ipcMain.handle(
     IPC.appearanceApplyTheme,
@@ -775,13 +870,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.appearanceSetAppIcon,
     (_event, style?: AppIconStyle): AppIconStyle => {
-      const next: AppIconStyle =
-        style === 'violet' ||
-        style === 'amber' ||
-        style === 'mono' ||
-        style === 'neon'
-          ? style
-          : 'default'
+      const next: AppIconStyle = normalizeAppIconStyle(style)
       const image = appIconFor(next)
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.setIcon(image)
@@ -1023,9 +1112,11 @@ function registerIpcHandlers(): void {
     flushBookmarks()
     flushPreferences()
     const next = switchProfile(String(id ?? ''))
+    startupGateCompleted = true
     // A profile that is being used for the first time needs the same capture hooks as the
     // others, otherwise its traffic would be invisible to the interceptor panel.
     const profile = next.find((entry) => entry.active)
+    if (profile) attachDownloadSession(session.fromPartition(profile.partition, { cache: true }))
     if (profile && markInstrumented(profile.partition)) {
       instrumentInterceptor(session.fromPartition(profile.partition, { cache: true }), 'standard')
     }
@@ -1162,6 +1253,7 @@ function boot(): void {
    */
   const startPartition = activeProfilePartition()
   const guestSession = session.fromPartition(startPartition, { cache: true })
+  attachDownloadSession(guestSession)
   configureInterceptor(config.interceptor, sendToShell)
   instrumentInterceptor(guestSession, 'standard')
   markInstrumented(startPartition)
@@ -1244,13 +1336,33 @@ function boot(): void {
    * The stores debounce their writes; quitting straight after a change would drop the last one.
    * Everything that is queued is landed while the process is still alive.
    */
-  app.on('before-quit', () => {
-    flushProfileRegistry()
-    flushHistory()
-    flushBookmarks()
-    flushPreferences()
-    saveFaviconSnapshot()
-  })
+  if (!exitHookRegistered) {
+    exitHookRegistered = true
+    app.on('before-quit', (event) => {
+      flushProfileRegistry()
+      flushHistory()
+      flushBookmarks()
+      flushPreferences()
+      saveFaviconSnapshot()
+      if (exitCleanupDone || !needsExitCleanup()) {
+        exitCleanupDone = true
+        return
+      }
+      event.preventDefault()
+      if (exitCleanupRunning) return
+      exitCleanupRunning = true
+      void cleanupOnExit().finally(() => {
+        exitCleanupDone = true
+        exitCleanupRunning = false
+        app.quit()
+      })
+    })
+  }
+  void runRetentionCleanup()
+  if (!retentionTimer) {
+    retentionTimer = setInterval(() => void runRetentionCleanup(), 60 * 60 * 1000)
+    retentionTimer.unref()
+  }
 }
 
 app.whenReady().then(boot)

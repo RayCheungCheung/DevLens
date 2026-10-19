@@ -96,6 +96,8 @@ interface ToolbarProps {
   onToggleSidebar: () => void
   ideLabel: string
   ideScheme: string
+  ideEditorLabel: string
+  ideEnabled: boolean
   /** Workspace mode: normal hides every developer affordance. */
   mode: WorkspaceMode
   modeBusy: boolean
@@ -181,6 +183,8 @@ export function Toolbar({
   onToggleSidebar,
   ideLabel,
   ideScheme,
+  ideEditorLabel,
+  ideEnabled,
   mode,
   modeBusy,
   layout,
@@ -338,16 +342,17 @@ export function Toolbar({
         </button>
       )}
 
-      {dev && layout.tools.openInIde && (
+      {dev && layout.tools.openInIde && ideEnabled && (
         <button
           type="button"
+          data-testid="open-in-ide"
           data-toolbar-secondary
           onClick={onOpenInIde}
-          title={`Open ${ideLabel} with ${ideScheme}://file/...`}
+          title={`Open ${ideLabel} in ${ideEditorLabel} (${ideScheme}://file/...)`}
           className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--devlens-hairline)] bg-white/[0.02] px-2.5 text-[12px] text-ink-200 transition-all hover:border-[var(--devlens-accent-line)] hover:bg-[var(--devlens-accent-soft)] hover:text-[var(--devlens-accent)]"
         >
           <Code2 size={14} />
-          Open in VS Code
+          <span className="max-w-[170px] truncate">Open in {ideEditorLabel}</span>
         </button>
       )}
 

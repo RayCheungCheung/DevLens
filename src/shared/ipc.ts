@@ -12,6 +12,8 @@ export const IPC = {
   windowClose: 'devlens:window:close',
   /** renderer -> main (invoke): open a file/line in the configured editor. */
   openInIde: 'devlens:ide:open',
+  /** renderer -> main (invoke): installed editors detected from OS URI handlers. */
+  ideList: 'devlens:ide:list',
   /** main -> renderer: a console message captured from a guest. */
   consoleLog: 'devlens:log:console',
   /** main -> renderer: a failed / non-2xx request captured from a guest. */
@@ -74,6 +76,8 @@ export const IPC = {
   pageZoomSet: 'devlens:page:zoom-set',
   /** guest -> renderer: Ctrl/Cmd+F was pressed while a page owned focus. */
   findInPageRequested: 'devlens:find:requested',
+  /** guest -> renderer: Ctrl/Cmd+R or F5 should reload both viewports. */
+  reloadViewportsRequested: 'devlens:viewports:reload-requested',
 
   /* Omnibox ----------------------------------------------------------- */
   /** renderer -> main (invoke): recent visited pages for suggestions. */
@@ -139,6 +143,14 @@ export const IPC = {
   omniboxSettingsGet: 'devlens:settings/omnibox',
   omniboxSettingsSet: 'devlens:settings/omnibox:set',
   omniboxSettingsChanged: 'devlens:settings/omnibox:changed',
+  /**
+   * The About page's system info, shown by `devlens:settings/about`. It reads the same per-profile
+   * preference file for the operator's update channel and strategy, and collects version/OS facts
+   * that only the main process can see.
+   */
+  aboutInfo: 'devlens:settings/about',
+  downloadsDefaultDirectory: 'devlens:downloads:default-directory',
+  downloadsPickDirectory: 'devlens:downloads:pick-directory',
   /** renderer -> main (invoke): open an address in a separate window. */
   bookmarksOpenWindow: 'devlens:bookmarks:open-window',
   /** renderer -> main (invoke): pick a bookmark file and merge it into the tree. */
@@ -234,6 +246,8 @@ export const IPC = {
   privacyApplyNetwork: 'devlens:privacy:apply-network',
   /** renderer -> main (invoke): actual disk usage of this profile. */
   privacyDiskUsage: 'devlens:privacy:disk-usage',
+  privacyClearBrowsingData: 'devlens:privacy:clear-browsing-data',
+  privacyRunRetentionCleanup: 'devlens:privacy:run-retention-cleanup',
   /** renderer -> main (invoke): apply website light/dark/system preference. */
   appearanceApplyTheme: 'devlens:appearance:apply-theme',
   /** renderer -> main (invoke): apply a generated taskbar/Dock icon style. */

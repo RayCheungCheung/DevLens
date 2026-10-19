@@ -7,6 +7,7 @@ import {
 } from '../shared/private-tab'
 import { hardenSession } from './sessions'
 import { enforceRamOnly } from './wimh'
+import { attachDownloadSession, cleanupPrivateDownloadHistory } from './downloads'
 
 /**
  * Private tab sessions.
@@ -79,6 +80,7 @@ export async function openPrivateTab(tabId: string): Promise<PrivateTabState> {
   const partition = privateTabPartition(tabId)
   const ses = session.fromPartition(partition, { cache: false })
   hardenSession(ses, `private tab ${tabId}`)
+  attachDownloadSession(ses, true)
   enforceRamOnly(ses)
   deps.instrument(ses, tabId)
 
@@ -116,6 +118,7 @@ export async function closePrivateTab(tabId: string): Promise<PrivateTabState | 
 
   tabs.delete(tabId)
   const ses = session.fromPartition(state.partition, { cache: false })
+  await cleanupPrivateDownloadHistory(ses)
   await wipePrivateSession(ses)
   deps.onChanged(privateTabsNow())
   return { ...clone(state), wipedAt: Date.now() }

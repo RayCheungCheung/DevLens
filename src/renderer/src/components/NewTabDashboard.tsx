@@ -12,6 +12,7 @@ import type { DefaultEngineRef, OmniboxEntry } from '@shared/omnibox-settings'
 import type { WorkspaceMode } from '@shared/mode'
 import type { BookmarkEntry, LocalServer, WimhState, WorkspaceEntry } from '@shared/types'
 import type { LaunchpadPreferences } from '@shared/launchpad'
+import { resolveLaunchpadWallpaper } from '@shared/wallpapers'
 import { Checklist } from '@renderer/components/dashboard/Checklist'
 import { DevSpotlight } from '@renderer/components/dashboard/DevSpotlight'
 import { FocusTimer } from '@renderer/components/dashboard/FocusTimer'
@@ -25,6 +26,7 @@ import { WorkspacesWidget } from '@renderer/components/dashboard/WorkspacesWidge
 import { WorldClocks } from '@renderer/components/dashboard/WorldClocks'
 import { Omnibox } from '@renderer/components/Omnibox'
 import { DevLensMark } from '@renderer/components/DevLensMark'
+import { DEV_LENS_SPOTLIGHT_SIGNATURE } from '@shared/developer-quotes'
 
 /**
  * The dashboard's embedded omnibox.
@@ -125,6 +127,7 @@ export function NewTabDashboard({
   onInsertPrefix,
   onToggleWimh
 }: NewTabDashboardProps) {
+  const wallpaperUrl = resolveLaunchpadWallpaper(launchpad)
   const dev = services.mode === 'dev'
 
   /**
@@ -221,15 +224,16 @@ export function NewTabDashboard({
       data-testid="new-tab-dashboard"
       className="nova-ntp absolute inset-0 z-40 overflow-y-auto"
       style={
-        launchpad.wallpaper
+        wallpaperUrl
           ? {
-              backgroundImage: `linear-gradient(rgba(3, 5, 8, ${Math.min(
+              backgroundImage: `linear-gradient(var(--devlens-wallpaper-tint), var(--devlens-wallpaper-tint)), linear-gradient(rgba(3, 5, 8, ${Math.min(
                 0.82,
                 Math.max(0.12, launchpad.wallpaperDim / 100)
               )}), rgba(3, 5, 8, ${Math.min(
                 0.9,
                 Math.max(0.2, launchpad.wallpaperDim / 100 + 0.08)
-              )})), url(${launchpad.wallpaper})`,
+              )})), url("${wallpaperUrl}")`,
+              backgroundBlendMode: 'color, normal, normal',
               backgroundSize: 'cover',
               backgroundPosition: 'center'
             }
@@ -246,8 +250,11 @@ export function NewTabDashboard({
               DevLens
               <DevLensMark size={14} className="text-[var(--devlens-accent)]" />
             </h1>
-            <p className="mt-1 truncate text-[11px] text-ink-500">
-              Be normal when you need, be a hacker when you want.
+            <p
+              data-testid="devlens-team-signature"
+              className="mt-1 font-mono text-[10px] tracking-wide text-ink-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
+            >
+              {DEV_LENS_SPOTLIGHT_SIGNATURE} <span className="text-ink-300">— DevLens Team</span>
             </p>
           </div>
 
@@ -322,7 +329,7 @@ export function NewTabDashboard({
         <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2 @6xl:grid-cols-3">
           {launchpad.widgets.clock && <WorldClocks />}
           {launchpad.widgets.devSpotlight && (
-            <DevSpotlight wallpaper={launchpad.wallpaper} dim={launchpad.wallpaperDim} />
+            <DevSpotlight wallpaper={wallpaperUrl} dim={launchpad.wallpaperDim} />
           )}
           {launchpad.widgets.quickSnippets && <QuickSnippets profileId={services.profileId} />}
           {launchpad.widgets.systemHealth && (

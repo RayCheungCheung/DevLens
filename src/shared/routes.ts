@@ -18,6 +18,7 @@ export type InternalRouteId =
   | 'settings'
   | 'appearance-themes'
   | 'bookmarks'
+  | 'changelog'
 
 /** Every addressable section of the settings centre. */
 export const SETTINGS_CATEGORY_IDS = [
@@ -28,7 +29,9 @@ export const SETTINGS_CATEGORY_IDS = [
   'tabs',
   'developer',
   'identity',
-  'languages'
+  'languages',
+  'downloads',
+  'about'
 ] as const
 
 export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number]
@@ -43,7 +46,8 @@ export const INTERNAL_ROUTES: Record<InternalRouteId, string> = {
   /** The profile settings hub; the omnibox section is one of its pages. */
   settings: 'devlens:settings/home',
   /** Saved bookmarks, as a full tab surface. */
-  bookmarks: 'devlens:bookmarks'
+  bookmarks: 'devlens:bookmarks',
+  changelog: 'devlens:changelog'
 }
 
 const ROUTE_LABELS: Record<InternalRouteId, string> = {
@@ -52,7 +56,8 @@ const ROUTE_LABELS: Record<InternalRouteId, string> = {
   'appearance-themes': 'DevLens Themes',
   history: 'History',
   settings: 'Settings',
-  bookmarks: 'Bookmarks'
+  bookmarks: 'Bookmarks',
+  changelog: 'Release Notes & Changelog'
 }
 
 /** The URL for a route id - what a tab's address becomes. */

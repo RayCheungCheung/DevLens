@@ -20,7 +20,8 @@ export async function openInIde(
   request: OpenInIdeRequest,
   config: ResolvedConfig,
   /** Overrides `config.workspaceRoot` so the dashboard can switch projects at runtime. */
-  workspaceRoot: string = config.workspaceRoot
+  workspaceRoot: string = config.workspaceRoot,
+  scheme: string = config.ideScheme
 ): Promise<OpenInIdeResult> {
   const target = resolveTarget(request, workspaceRoot)
   if (!target) {
@@ -32,7 +33,7 @@ export async function openInIde(
     }
   }
 
-  const uri = buildEditorUri(config.ideScheme, target.filePath, target.line)
+  const uri = buildEditorUri(scheme, target.filePath, target.line)
   try {
     await shell.openExternal(uri)
     return { ok: true, uri, resolvedPath: target.filePath, error: null }

@@ -116,10 +116,28 @@ export function applyModeMenu(mode: WorkspaceMode): void {
     submenu: [{ role: 'minimize' }, { role: 'zoom' }]
   }
 
+  /**
+   * View tools without Electron's default Reload/Force Reload accelerators. Ctrl+R and F5 belong
+   * to the active guest page; keeping the menu accelerator here would reload the shell, replay
+   * bootstrap and potentially reopen the profile gate.
+   */
+  const viewMenu: Electron.MenuItemConstructorOptions = {
+    label: 'View',
+    submenu: [
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' },
+      { type: 'separator' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { role: 'togglefullscreen' }
+    ]
+  }
+
   const template: Electron.MenuItemConstructorOptions[] =
     mode === 'normal'
       ? [{ role: 'editMenu' }, windowMenu]
-      : [{ role: 'editMenu' }, { role: 'viewMenu' }, windowMenu]
+      : [{ role: 'editMenu' }, viewMenu, windowMenu]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

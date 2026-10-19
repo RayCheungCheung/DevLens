@@ -694,3 +694,34 @@ export type ProfileAvatar = 'user' | 'briefcase' | 'laptop' | 'flask' | 'shield'
 export interface ProfileSettings {
   askOnStartup: boolean
 }
+
+/**
+ * System and version information shown by `devlens:settings/about`.
+ *
+ * Collected in the main process where `app`, `process.versions` and `os` live, so the renderer
+ * can show what it is actually running on without touching Node. Update preferences are read
+ * separately from the live profile store so changing profiles never reuses an old snapshot.
+ */
+export interface AboutInfo {
+  /** App version from `app.getVersion()` (package.json `version`). */
+  version: string
+  /** Electron version, e.g. `44.7.2`. */
+  electron: string
+  /** Bundled Node/Chromium versions from `process.versions`. */
+  node: string
+  chromium: string
+  /** Operating system platform, e.g. `win32`, `darwin`, `linux`. */
+  platform: string
+  /** CPU architecture, e.g. `x64`, `arm64`. */
+  arch: string
+  /** Human-readable OS string from `os.version()`. */
+  osVersion: string
+  /** No update feed is configured in the current source distribution. */
+  updateStatus: 'up-to-date' | 'unavailable'
+}
+
+/** Distribution channels DevLens can pull updates from. */
+export type UpdateChannel = 'stable' | 'beta' | 'dev'
+
+/** How updates are applied. */
+export type UpdateStrategy = 'auto' | 'manual' | 'background'

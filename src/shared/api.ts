@@ -3,6 +3,7 @@ import type {
   AiAskResult,
   AiProviderInfo,
   AiStreamEvent,
+  AboutInfo,
   BootstrapPayload,
   BookmarkEntry,
   BookmarkLocation,
@@ -40,16 +41,22 @@ import type {
 } from './types'
 import type { ProtectionLevel } from './protection'
 import type { PrivateTabState } from './private-tab'
-import type { ProfilePreferences } from './preferences'
+import type { ProfilePreferences, ProfilePreferencesPatch } from './preferences'
 import type { OmniboxSettings } from './omnibox-settings'
 import type {
   LaunchpadSession,
   LaunchpadSystemState,
   LaunchpadWeather
 } from './launchpad'
-import type { ProfileDiskUsage, ShieldRules } from './privacy'
+import type {
+  ClearBrowsingDataRequest,
+  ClearBrowsingDataResult,
+  ProfileDiskUsage,
+  ShieldRules
+} from './privacy'
 import type { AppIconStyle, ContentThemeMode } from './appearance'
 import type { LanguagePreferences } from './languages'
+import type { IdeOption } from './ide'
 
 export type Unsubscribe = () => void
 
@@ -64,6 +71,7 @@ export interface DevLensApi {
   /** Closes the window: Ctrl/Cmd+W with a single tab left. */
   windowClose(): void
   openInIde(request: OpenInIdeRequest): Promise<OpenInIdeResult>
+  ideList(): Promise<IdeOption[]>
   onConsoleLog(listener: (entry: ConsoleLogEntry) => void): Unsubscribe
   onNetworkEntry(listener: (entry: NetworkEntry) => void): Unsubscribe
   onGuestStatus(listener: (event: GuestStatusEvent) => void): Unsubscribe
@@ -110,6 +118,7 @@ export interface DevLensApi {
   onFindInPageRequested(
     listener: (request: { webContentsId: number }) => void
   ): Unsubscribe
+  onReloadViewportsRequested(listener: () => void): Unsubscribe
 
   /* Omnibox */
   historyList(limit?: number): Promise<HistoryEntry[]>
@@ -193,13 +202,15 @@ export interface DevLensApi {
   /* Per-profile preferences */
   /** This profile's small preferences, e.g. which AI assistant it opens on. */
   preferencesState(): Promise<ProfilePreferences>
-  preferencesSet(patch: Partial<ProfilePreferences>): Promise<ProfilePreferences>
+  preferencesSet(patch: ProfilePreferencesPatch): Promise<ProfilePreferences>
   onPreferencesChanged(listener: (preferences: ProfilePreferences) => void): Unsubscribe
   protectionSetShieldRules(rules: ShieldRules): Promise<ProtectionState>
   privacyApplyNetwork(input: {
     dnsMode: 'system' | 'secure' | 'off'
   }): Promise<{ dnsMode: string }>
   privacyDiskUsage(): Promise<ProfileDiskUsage>
+  privacyClearBrowsingData(request: ClearBrowsingDataRequest): Promise<ClearBrowsingDataResult>
+  privacyRunRetentionCleanup(): Promise<boolean>
   appearanceApplyTheme(mode: ContentThemeMode): Promise<ContentThemeMode>
   appearanceSetAppIcon(style: AppIconStyle): Promise<AppIconStyle>
   languagesApply(input: Pick<LanguagePreferences, 'spellCheck' | 'spellCheckLanguages'>): Promise<{
@@ -226,6 +237,14 @@ export interface DevLensApi {
   omniboxSettingsGet(): Promise<OmniboxSettings>
   omniboxSettingsSet(settings: OmniboxSettings): Promise<OmniboxSettings>
   onOmniboxSettingsChanged(listener: (settings: OmniboxSettings) => void): Unsubscribe
+  /**
+   * System and version information for `devlens:settings/about`: the app, Electron, Node and
+   * Chromium versions, the OS and architecture, and the update service status.
+   */
+  aboutInfo(): Promise<AboutInfo>
+  downloadsDefaultDirectory(): Promise<string>
+  /** Select and save a folder for the profile that opened the native picker. */
+  downloadsPickDirectory(): Promise<boolean>
   /**
    * A guest asked for a new tab (`target=_blank`, ctrl-click): main forwards the URL and the shell
    * opens it in the strip, because the tab strip is the renderer's.

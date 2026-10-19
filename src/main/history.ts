@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { HistoryEntry } from '../shared/types'
 import { activeProfileId } from './profiles'
 import { profileFile } from './storage'
+import { preferencesNow } from './preferences'
 
 /**
  * Visited pages, kept small and local.
@@ -98,6 +99,7 @@ export function flushHistory(): void {
  */
 export function historyAdd(input: { url: string; title?: string; private?: boolean }): boolean {
   if (input.private) return false
+  if (preferencesNow().privacy.historyPolicy === 'never') return false
   load()
   const url = normalise(input.url)
   if (!url) return false
@@ -140,6 +142,30 @@ export function historyPrune(days: number): number {
   const safeDays = Math.min(3650, Math.max(1, Math.round(days)))
   const cutoff = Date.now() - safeDays * 24 * 60 * 60 * 1000
   entries = entries.filter((entry) => entry.lastVisitedAt >= cutoff)
+  scheduleSave()
+  return entries.length
+}
+
+/** Keeps only visits whose host belongs to one of the supplied origins. */
+export function historyKeepOrigins(origins: string[]): number {
+  load()
+  const hosts = new Set<string>()
+  for (const origin of origins) {
+    try {
+      hosts.add(new URL(origin).host.toLowerCase())
+    } catch {
+      /* an unusable origin keeps nothing */
+    }
+  }
+  entries = hosts.size
+    ? entries.filter((entry) => {
+        try {
+          return hosts.has(new URL(entry.url).host.toLowerCase())
+        } catch {
+          return false
+        }
+      })
+    : []
   scheduleSave()
   return entries.length
 }

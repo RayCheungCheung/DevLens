@@ -12,11 +12,17 @@ import {
   DEFAULT_PREFERENCES,
   DEFAULT_MOBILE_SETTINGS,
   DEFAULT_TOOLBAR_LAYOUT,
+  DEFAULT_ABOUT_PREFERENCES,
+  DEFAULT_DEVELOPER_PREFERENCES,
   type BrowserPreferences,
+  type DeveloperPreferences,
   type ProfilePreferences,
+  type ProfilePreferencesPatch,
   type MobileSettings,
-  type ToolbarLayout
+  type ToolbarLayout,
+  type AboutPreferences
 } from '../shared/preferences'
+import type { UpdateChannel, UpdateStrategy } from '../shared/types'
 import {
   DEFAULT_LAUNCHPAD_PREFERENCES,
   type LaunchTarget,
@@ -25,12 +31,18 @@ import {
 } from '../shared/launchpad'
 import {
   DEFAULT_PRIVACY_PREFERENCES,
-  type PrivacyPreferences
+  type PrivacyPreferences,
+  type RetentionPeriod
 } from '../shared/privacy'
 import {
   DEFAULT_APPEARANCE_PREFERENCES,
+  isCodeFontId,
+  isUiFontId,
   type AppearancePreferences
 } from '../shared/appearance'
+import { normalizeAppIconStyle } from '../shared/app-icon-art'
+import { isIdeId } from '../shared/ide'
+import { isWallpaperPresetId } from '../shared/wallpapers'
 import { DEFAULT_TABS_PREFERENCES, type TabsPreferences } from '../shared/tabs'
 import {
   DEFAULT_LANGUAGE_PREFERENCES,
@@ -38,6 +50,7 @@ import {
 } from '../shared/languages'
 import { activeProfileId } from './profiles'
 import { profileFile } from './storage'
+import { mergeDownloadPreferences, sanitizeDownloadPreferences } from '../shared/downloads'
 
 /**
  * Small per-profile preferences.
@@ -84,7 +97,10 @@ function load(): void {
       appearance: sanitizeAppearance(parsed?.appearance),
       tabs: sanitizeTabs(parsed?.tabs),
       languages: sanitizeLanguages(parsed?.languages),
-      browser: sanitizeBrowser(parsed?.browser)
+      browser: sanitizeBrowser(parsed?.browser),
+      about: sanitizeAbout(parsed?.about),
+      downloads: sanitizeDownloadPreferences(parsed?.downloads),
+      developer: sanitizeDeveloper(parsed?.developer)
     }
   } catch (error) {
     console.warn('[devlens] could not read preferences', error)
@@ -129,7 +145,7 @@ export function preferencesNow(): ProfilePreferences {
 }
 
 /** Applies a patch, ignoring anything that is not a known value. */
-export function setPreferences(patch: Partial<ProfilePreferences>): ProfilePreferences {
+export function setPreferences(patch: ProfilePreferencesPatch): ProfilePreferences {
   load()
   if (isAiSiteId(patch.aiProvider)) preferences.aiProvider = patch.aiProvider
   if (patch.omnibox) preferences.omnibox = sanitizeOmnibox({ ...preferences.omnibox, ...patch.omnibox })
@@ -168,6 +184,14 @@ export function setPreferences(patch: Partial<ProfilePreferences>): ProfilePrefe
     })
   }
   if (patch.browser) preferences.browser = sanitizeBrowser({ ...preferences.browser, ...patch.browser })
+  if (patch.about) preferences.about = sanitizeAbout({ ...preferences.about, ...patch.about })
+  if (patch.downloads) preferences.downloads = mergeDownloadPreferences(preferences.downloads, patch.downloads)
+  if (patch.developer) {
+    preferences.developer = sanitizeDeveloper({
+      ...preferences.developer,
+      ...patch.developer
+    })
+  }
   scheduleSave()
   return preferencesNow()
 }
@@ -270,19 +294,15 @@ function sanitizeAppearance(
       input?.workspaceTheme === 'ember'
         ? input.workspaceTheme
         : 'devlens',
-    appIcon:
-      input?.appIcon === 'violet' ||
-      input?.appIcon === 'amber' ||
-      input?.appIcon === 'mono' ||
-      input?.appIcon === 'neon'
-        ? input.appIcon
-        : 'default',
+    appIcon: normalizeAppIconStyle(input?.appIcon),
     density:
       input?.density === 'standard' ||
       input?.density === 'compact' ||
       input?.density === 'touch'
         ? input.density
-        : defaults.density
+        : defaults.density,
+    uiFont: isUiFontId(input?.uiFont) ? input.uiFont : defaults.uiFont,
+    codeFont: isCodeFontId(input?.codeFont) ? input.codeFont : defaults.codeFont
   }
 }
 
@@ -290,7 +310,31 @@ function sanitizePrivacy(input: Partial<PrivacyPreferences> | undefined): Privac
   const defaults = DEFAULT_PRIVACY_PREFERENCES
   const limit = Number(input?.dataLimitGb)
   const used = Number(input?.dataUsedGb)
-  const days = Number(input?.retentionDays)
+  const legacy = input as
+    | (Partial<PrivacyPreferences> & {
+        historyRetention?: 'always' | 'custom' | 'incognito'
+        retentionDays?: number
+      })
+    | undefined
+  const legacyDays = Number(legacy?.retentionDays)
+  const legacyHistoryExpiry: RetentionPeriod =
+    legacy?.historyRetention === 'custom'
+      ? !Number.isFinite(legacyDays) || legacyDays >= 90
+        ? '90d'
+        : legacyDays <= 7
+          ? '7d'
+          : '30d'
+      : 'forever'
+  const period = (value: unknown, fallback: RetentionPeriod): RetentionPeriod =>
+    value === 'forever' ||
+    value === '7d' ||
+    value === '30d' ||
+    value === '90d' ||
+    value === 'on-close'
+      ? value
+      : fallback
+  const lastCookieCleanupAt = Number(input?.lastCookieCleanupAt)
+  const lastCacheCleanupAt = Number(input?.lastCacheCleanupAt)
   return {
     shieldMode: input?.shieldMode === 'strict' ? 'strict' : 'standard',
     blockCrossSiteTrackers: input?.blockCrossSiteTrackers !== false,
@@ -299,16 +343,33 @@ function sanitizePrivacy(input: Partial<PrivacyPreferences> | undefined): Privac
     networkTunnelEnabled: input?.networkTunnelEnabled === true,
     dataLimitGb: Number.isFinite(limit) ? Math.min(1000, Math.max(1, Math.round(limit))) : defaults.dataLimitGb,
     dataUsedGb: Number.isFinite(used) ? Math.max(0, Number(used)) : 0,
-    historyRetention:
-      input?.historyRetention === 'custom' || input?.historyRetention === 'incognito'
-        ? input.historyRetention
-        : 'always',
-    retentionDays: Number.isFinite(days) ? Math.min(3650, Math.max(1, Math.round(days))) : 90,
+    autoClearOnExit: input?.autoClearOnExit === true,
+    historyPolicy:
+      input?.historyPolicy === 'never' || input?.historyPolicy === 'pinned'
+        ? input.historyPolicy
+        : legacy?.historyRetention === 'incognito'
+          ? 'never'
+          : 'remember',
+    cookieExpiry: period(input?.cookieExpiry, defaults.cookieExpiry),
+    historyExpiry: period(input?.historyExpiry, legacyHistoryExpiry),
+    cacheExpiry: period(input?.cacheExpiry, defaults.cacheExpiry),
+    lastCookieCleanupAt: Number.isFinite(lastCookieCleanupAt)
+      ? Math.max(0, lastCookieCleanupAt)
+      : 0,
+    lastCacheCleanupAt: Number.isFinite(lastCacheCleanupAt)
+      ? Math.max(0, lastCacheCleanupAt)
+      : 0,
     sendDnt: input?.sendDnt !== false,
     dnsMode:
       input?.dnsMode === 'off' || input?.dnsMode === 'system' ? input.dnsMode : 'secure',
     httpsOnly: input?.httpsOnly !== false,
     siteExceptions: (Array.isArray(input?.siteExceptions) ? input.siteExceptions : [])
+      .filter((host) => typeof host === 'string' && host.trim())
+      .map((host) => host.trim().toLowerCase().slice(0, 255))
+      .slice(0, 50),
+    browsingDataExceptions: (Array.isArray(input?.browsingDataExceptions)
+      ? input.browsingDataExceptions
+      : [])
       .filter((host) => typeof host === 'string' && host.trim())
       .map((host) => host.trim().toLowerCase().slice(0, 255))
       .slice(0, 50)
@@ -361,6 +422,12 @@ function sanitizeLaunchpad(
     rawWallpaper.startsWith('data:image/') && rawWallpaper.length <= 7_000_000
       ? rawWallpaper
       : ''
+  const requestedPreset = isWallpaperPresetId(input?.wallpaperPreset)
+    ? input.wallpaperPreset
+    : wallpaper
+      ? 'custom'
+      : defaults.wallpaperPreset
+  const wallpaperPreset = requestedPreset === 'custom' && !wallpaper ? 'none' : requestedPreset
   const dim = Number(input?.wallpaperDim)
   return {
     newTabTarget: launchTarget(
@@ -376,7 +443,13 @@ function sanitizeLaunchpad(
       defaults.customUrl
     ),
     launchAtLogin: input?.launchAtLogin === true,
-    restoreLastTabs: input?.restoreLastTabs === true,
+    startupTabs:
+      input?.startupTabs === 'all' || input?.startupTabs === 'pinned'
+        ? input.startupTabs
+        : (input as { restoreLastTabs?: boolean } | undefined)?.restoreLastTabs === true
+          ? 'all'
+          : defaults.startupTabs,
+    checkDefaultBrowser: input?.checkDefaultBrowser !== false,
     widgets: {
       clock: input?.widgets?.clock !== false,
       devSpotlight: input?.widgets?.devSpotlight !== false,
@@ -390,6 +463,7 @@ function sanitizeLaunchpad(
       bookmarks: input?.activity?.bookmarks !== false,
       downloads: input?.activity?.downloads !== false
     },
+    wallpaperPreset,
     wallpaper,
     wallpaperDim: Number.isFinite(dim) ? Math.min(80, Math.max(0, Math.round(dim))) : defaults.wallpaperDim,
     weatherPlace:
@@ -406,7 +480,8 @@ function sanitizeLaunchpadSession(input: Partial<LaunchpadSession> | undefined):
     .slice(0, 20)
     .map((tab) => ({
       url: String(tab.url).slice(0, 4096),
-      title: String(tab.title ?? '').slice(0, 300)
+      title: String(tab.title ?? '').slice(0, 300),
+      ...(tab.pinned === true ? { pinned: true } : {})
     }))
   const activeIndex = Number(input?.activeIndex)
   return {
@@ -562,4 +637,36 @@ function sanitizeOmnibox(input: Partial<OmniboxSettings> | undefined): OmniboxSe
     sources
   }
   return { ...next, defaultEngine: resolveDefaultEngine(next) }
+}
+
+/**
+ * The About page's choices: update channel and strategy.
+ *
+ * Unknown values fall back to the defaults rather than being believed, so a hand-edited file cannot
+ * name a channel the About page cannot render.
+ */
+function sanitizeAbout(input: Partial<AboutPreferences> | undefined): AboutPreferences {
+  const defaults = DEFAULT_ABOUT_PREFERENCES
+  const channel: unknown = input?.updateChannel
+  const strategy: unknown = input?.updateStrategy
+  const validChannels: UpdateChannel[] = ['stable', 'beta', 'dev']
+  const validStrategies: UpdateStrategy[] = ['auto', 'manual', 'background']
+  return {
+    updateChannel:
+      typeof channel === 'string' && (validChannels as string[]).includes(channel)
+        ? (channel as UpdateChannel)
+        : defaults.updateChannel,
+    updateStrategy:
+      typeof strategy === 'string' && (validStrategies as string[]).includes(strategy)
+        ? (strategy as UpdateStrategy)
+        : defaults.updateStrategy
+  }
+}
+
+function sanitizeDeveloper(input: Partial<DeveloperPreferences> | undefined): DeveloperPreferences {
+  return {
+    ideEnabled:
+      input?.ideEnabled !== false && (input as { ideId?: unknown } | undefined)?.ideId !== 'off',
+    ideId: isIdeId(input?.ideId) ? input.ideId : DEFAULT_DEVELOPER_PREFERENCES.ideId
+  }
 }

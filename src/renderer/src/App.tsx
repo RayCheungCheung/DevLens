@@ -20,14 +20,18 @@ import { protectionPolicy, type ProtectionLevel } from '@shared/protection'
 import type { AiSiteId } from '@shared/ai-sites'
 import {
   DEFAULT_BROWSER_PREFERENCES,
+  DEFAULT_DEVELOPER_PREFERENCES,
   DEFAULT_PREFERENCES,
   DEFAULT_TOOLBAR_LAYOUT,
+  DEFAULT_ABOUT_PREFERENCES,
   type BrowserPreferences,
+  type DeveloperPreferences,
   type ProfilePreferences,
   type SidebarTogglePosition,
   type ToolbarLayout,
   type ToolbarTools
 } from '@shared/preferences'
+import { IDE_PRESETS, type IdeOption } from '@shared/ide'
 import {
   DEFAULT_LAUNCHPAD_PREFERENCES,
   launchTargetUrl,
@@ -37,11 +41,16 @@ import {
 } from '@shared/launchpad'
 import {
   DEFAULT_PRIVACY_PREFERENCES,
+  type ClearBrowsingDataRequest,
+  type ClearBrowsingDataResult,
+  type HistoryPolicy,
   type PrivacyPreferences,
   type ProfileDiskUsage
 } from '@shared/privacy'
 import {
+  CODE_FONTS,
   DEFAULT_APPEARANCE_PREFERENCES,
+  INTERFACE_FONTS,
   type AppearancePreferences,
   type UiDensity
 } from '@shared/appearance'
@@ -64,6 +73,7 @@ import {
 } from '@shared/mode'
 import type {
   AiContextChip,
+  AboutInfo,
   BootstrapPayload,
   BookmarkEntry,
   BookmarkLocation,
@@ -84,6 +94,8 @@ import type {
   PageContextMenuPayload,
   ProtectionState,
   ScrollSyncMessage,
+  UpdateChannel,
+  UpdateStrategy,
   ViewportId,
   WimhState,
   WorkspaceEntry
@@ -97,6 +109,8 @@ import { HistoryPage } from '@renderer/components/HistoryPage'
 import { BookmarksPage } from '@renderer/components/BookmarksPage'
 import { FindBar } from '@renderer/components/FindBar'
 import { SettingsPage } from '@renderer/components/SettingsPage'
+import { ChangelogPage } from '@renderer/components/ChangelogPage'
+import { DEFAULT_DOWNLOAD_PREFERENCES, type DownloadPreferencesPatch } from '@shared/downloads'
 import { ThemeManagerPage } from '@renderer/components/ThemeManagerPage'
 import { VerticalTabs } from '@renderer/components/VerticalTabs'
 import { PageContextMenu } from '@renderer/components/PageContextMenu'
@@ -633,6 +647,18 @@ export function App() {
     preferences.tabs ?? DEFAULT_TABS_PREFERENCES
   const languagePreferences: LanguagePreferences =
     preferences.languages ?? DEFAULT_LANGUAGE_PREFERENCES
+  const aboutPreferences =
+    preferences.about ?? DEFAULT_ABOUT_PREFERENCES
+  const [aboutInfo, setAboutInfo] = useState<AboutInfo | null>(null)
+  const [ideOptions, setIdeOptions] = useState<IdeOption[]>([])
+  const downloadPreferences = preferences.downloads ?? DEFAULT_DOWNLOAD_PREFERENCES
+  const developerPreferences = preferences.developer ?? DEFAULT_DEVELOPER_PREFERENCES
+  const detectedIde = ideOptions.find((option) => option.id === developerPreferences.ideId)
+  const ideEditorLabel =
+    detectedIde?.label ??
+    IDE_PRESETS.find((option) => option.id === developerPreferences.ideId)?.label ??
+    developerPreferences.ideId
+  const ideEnabled = developerPreferences.ideEnabled
   const browserPreferencesRef = useRef(browserPreferences)
   const launchpadPreferencesRef = useRef(launchpadPreferences)
   const privacyPreferencesRef = useRef(privacyPreferences)
@@ -801,7 +827,9 @@ export function App() {
 
   const chooseLaunchpadWallpaper = useCallback((): void => {
     void window.devlens.launchpadPickWallpaper().then((result) => {
-      if (result.ok && result.dataUrl) saveLaunchpadPreferences({ wallpaper: result.dataUrl })
+      if (result.ok && result.dataUrl) {
+        saveLaunchpadPreferences({ wallpaperPreset: 'custom', wallpaper: result.dataUrl })
+      }
     })
   }, [saveLaunchpadPreferences])
 
@@ -940,7 +968,6 @@ export function App() {
       cancelled = true
     }
   }, [])
-
   useEffect(() => {
     let cancelled = false
     void window.devlens.inspectionSetOpen(defenseOpen).then((state) => {
@@ -1000,15 +1027,23 @@ export function App() {
           void window.devlens.protectionSetSiteAllowed(site, true)
         }
         const storedLaunchpad = storedPreferences.launchpad ?? DEFAULT_LAUNCHPAD_PREFERENCES
-        const restored = storedLaunchpad.restoreLastTabs ? storedLaunchpad.session.tabs : []
+        const savedTabs = storedLaunchpad.session.tabs
+        const restored =
+          storedLaunchpad.startupTabs === 'all'
+            ? savedTabs
+            : storedLaunchpad.startupTabs === 'pinned'
+              ? savedTabs.filter((tab) => tab.pinned === true)
+              : []
         if (restored.length > 0) {
           const ids = restored.map((tab) =>
-            openTab(tab.url, tab.title, { useNewTabTarget: false })
+            openTab(tab.url, tab.title, {
+              useNewTabTarget: false,
+              pinned: tab.pinned === true
+            })
           )
-          const active = Math.min(
-            Math.max(0, storedLaunchpad.session.activeIndex),
-            restored.length - 1
-          )
+          const preferred = savedTabs[storedLaunchpad.session.activeIndex]
+          const preferredIndex = restored.findIndex((tab) => tab.url === preferred?.url)
+          const active = preferredIndex >= 0 ? preferredIndex : 0
           setActiveTabId(ids[active])
           setAddress(restored[active]?.url ?? '')
           standardUrl.current = restored[active]?.url ?? ''
@@ -1027,11 +1062,21 @@ export function App() {
         }
         sessionSaveReady.current = true
         setHistory(recent)
-        if (storedPrivacy.historyRetention === 'incognito') {
+        if (storedPrivacy.historyPolicy === 'never') {
           await window.devlens.historyClear()
           if (!cancelled) setHistory([])
-        } else if (storedPrivacy.historyRetention === 'custom') {
-          await window.devlens.historyPrune(storedPrivacy.retentionDays)
+        } else if (
+          storedPrivacy.historyExpiry === '7d' ||
+          storedPrivacy.historyExpiry === '30d' ||
+          storedPrivacy.historyExpiry === '90d'
+        ) {
+          const days =
+            storedPrivacy.historyExpiry === '7d'
+              ? 7
+              : storedPrivacy.historyExpiry === '30d'
+                ? 30
+                : 90
+          await window.devlens.historyPrune(days)
           const pruned = await window.devlens.historyList(payload.historyLimit)
           if (!cancelled) setHistory(pruned)
         }
@@ -1158,6 +1203,31 @@ export function App() {
     statusTimer.current = window.setTimeout(() => setStatusMessage(null), STATUS_TTL_MS)
   }, [])
 
+  const saveAboutPreferences = useCallback(
+    (patch: Partial<{ updateChannel: UpdateChannel; updateStrategy: UpdateStrategy }>) => {
+      void window.devlens.preferencesSet({ about: patch })
+        .then(setPreferences)
+        .catch(() => showStatus('Could not save update preferences. Please try again.'))
+    },
+    [showStatus]
+  )
+
+  const saveDownloadPreferences = useCallback((patch: DownloadPreferencesPatch) => {
+    void window.devlens.preferencesSet({ downloads: patch })
+      .then(setPreferences)
+      .catch(() => showStatus('Could not save download preferences. Please try again.'))
+  }, [showStatus])
+
+  const saveDeveloperPreferences = useCallback(
+    (patch: Partial<DeveloperPreferences>) => {
+      void window.devlens
+        .preferencesSet({ developer: { ...developerPreferences, ...patch } })
+        .then(setPreferences)
+        .catch(() => showStatus('Could not save the editor preference.'))
+    },
+    [developerPreferences, showStatus]
+  )
+
   /** Switches the level and reflects the engine's answer, including its live counters. */
   const selectProtectionLevel = useCallback(
     async (level: ProtectionLevel) => {
@@ -1254,8 +1324,40 @@ export function App() {
 
   useEffect(() => window.devlens.onPreferencesChanged(setPreferences), [])
   useEffect(() => {
+    let cancelled = false
+    void window.devlens.aboutInfo().then((info) => {
+      if (!cancelled) setAboutInfo(info)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    let cancelled = false
+    void window.devlens.ideList().then((options) => {
+      if (!cancelled) setIdeOptions(options)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
     void window.devlens.launchpadSystemState().then(setSystemIntegration)
   }, [])
+  useEffect(() => {
+    if (!launchpadPreferences.checkDefaultBrowser) return
+    let cancelled = false
+    const check = (): void => {
+      void window.devlens
+        .launchpadSystemState()
+        .then((state) => {
+          if (!cancelled) setSystemIntegration(state)
+        })
+        .catch(() => undefined)
+    }
+    check()
+    window.addEventListener('focus', check)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', check)
+    }
+  }, [launchpadPreferences.checkDefaultBrowser])
   useEffect(() => {
     void window.devlens.privacyDiskUsage().then(setDiskUsage)
   }, [profileId])
@@ -1274,6 +1376,25 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = languagePreferences.primaryLanguage
   }, [languagePreferences.primaryLanguage])
+  useEffect(() => {
+    const root = document.documentElement
+    const interfaceFont =
+      INTERFACE_FONTS.find((font) => font.id === appearancePreferences.uiFont) ?? INTERFACE_FONTS[0]
+    const codeFont =
+      CODE_FONTS.find((font) => font.id === appearancePreferences.codeFont) ?? CODE_FONTS[0]
+    const previousSans = root.style.getPropertyValue('--font-sans')
+    const previousMono = root.style.getPropertyValue('--font-mono')
+    root.style.setProperty('--font-sans', interfaceFont.family)
+    root.style.setProperty('--font-mono', codeFont.family)
+    root.dataset.uiFont = interfaceFont.id
+    root.dataset.codeFont = codeFont.id
+    return () => {
+      if (previousSans) root.style.setProperty('--font-sans', previousSans)
+      else root.style.removeProperty('--font-sans')
+      if (previousMono) root.style.setProperty('--font-mono', previousMono)
+      else root.style.removeProperty('--font-mono')
+    }
+  }, [appearancePreferences.uiFont, appearancePreferences.codeFont])
 
   /**
    * The omnibox panel's own channel.
@@ -1348,6 +1469,7 @@ export function App() {
         partition?: string
         useNewTabTarget?: boolean
         activate?: boolean
+        pinned?: boolean
       }
     ): string => {
     tabSeq.current += 1
@@ -1362,11 +1484,17 @@ export function App() {
       title: title || hostOf(targetUrl),
       host: hostOf(targetUrl),
       secure: Boolean(targetUrl?.startsWith('https://')),
+      ...(options?.pinned ? { pinned: true } : {}),
       /* A tab opened *from* a page keeps that page's session; normal tabs leave this unset and
          follow the window. */
       ...(options?.partition ? { partition: options.partition } : {})
     }
     setTabs((current) => {
+      if (options?.pinned) {
+        const next = [...current]
+        next.splice(next.filter((entry) => entry.pinned).length, 0, tab)
+        return next
+      }
       // "New Tab to Right" and "Duplicate Tab" land next to the tab they came from; everything
       // else goes on the end.
       const index = options?.afterId ? current.findIndex((entry) => entry.id === options.afterId) : -1
@@ -1389,26 +1517,33 @@ export function App() {
    * Persist the restorable strip after the UI settles. Private tabs never enter this list, and a
    * debounce keeps rapid tab operations from turning the preference store into an event log.
    */
+  const saveSessionForTabs = useCallback((nextTabs: PageTab[], activeUrl: string): void => {
+    const restorable = nextTabs
+      .filter((tab) => !tab.private && Boolean(tab.url))
+      .map((tab) => ({
+        url: tab.url ?? '',
+        title: tab.title,
+        ...(tab.pinned ? { pinned: true } : {})
+      }))
+    const activeIndex = Math.max(
+      0,
+      restorable.findIndex((tab) => tab.url === activeUrl)
+    )
+    const session: LaunchpadSession = {
+      tabs: restorable,
+      activeIndex,
+      savedAt: Date.now()
+    }
+    void window.devlens.launchpadSaveSession(session).catch(() => undefined)
+  }, [])
+
   useEffect(() => {
     if (!sessionSaveReady.current) return
     const timer = window.setTimeout(() => {
-      const restorable = tabs
-        .filter((tab) => !tab.private && Boolean(tab.url))
-        .map((tab) => ({ url: tab.url ?? '', title: tab.title }))
-      const activeUrl = activeTab?.url ?? ''
-      const activeIndex = Math.max(
-        0,
-        restorable.findIndex((tab) => tab.url === activeUrl)
-      )
-      const session: LaunchpadSession = {
-        tabs: restorable,
-        activeIndex,
-        savedAt: Date.now()
-      }
-      void window.devlens.launchpadSaveSession(session).catch(() => undefined)
+      saveSessionForTabs(tabs, activeTab?.url ?? '')
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [activeTab?.url, tabs])
+  }, [activeTab?.url, saveSessionForTabs, tabs])
 
   /**
    * Opens a tab that runs at maximum protection, on a session of its own.
@@ -1806,7 +1941,7 @@ export function App() {
         window.devlens.historyAdd({ url, title, private: true, tabId: activeTab.id })
       } else {
         if (!ghost.active) standardUrl.current = url
-        if (privacyPreferencesRef.current.historyRetention !== 'incognito') {
+        if (privacyPreferencesRef.current.historyPolicy !== 'never') {
           window.devlens.historyAdd({ url, title })
         }
       }
@@ -1833,7 +1968,7 @@ export function App() {
       if (!ghost.active) standardUrl.current = url
       if (
         !activeTab?.private &&
-        privacyPreferencesRef.current.historyRetention !== 'incognito'
+        privacyPreferencesRef.current.historyPolicy !== 'never'
       ) {
         window.devlens.historyAdd({ url, title })
       }
@@ -1842,6 +1977,13 @@ export function App() {
     },
     [activeTab, ghost.active, openPrivateTab, openTab, refreshHistory]
   )
+
+  /** Release notes stay in the shell; community links open in a separate web tab. */
+  const openAboutRoute = useCallback((url: string): void => {
+    const route = internalRouteOf(url)
+    if (route) openInternalTab(route, url)
+    else if (/^https:\/\//i.test(url)) openInNewTab(url)
+  }, [openInternalTab, openInNewTab])
 
   /**
    * A page asked for a new tab.
@@ -1879,6 +2021,10 @@ export function App() {
     activeFrame('mobile')?.reload()
     activeFrame('desktop')?.reload()
   }, [activeFrame])
+  useEffect(
+    () => window.devlens.onReloadViewportsRequested(() => reloadBoth()),
+    [reloadBoth]
+  )
 
   /* ---------------- omnibox ---------------- */
 
@@ -2340,15 +2486,29 @@ export function App() {
     showStatus(result.ok ? `cleared ${result.cleared.join(', ')}` : 'could not clear session data')
   }, [activeTab, ghost.active, partitionForTab, showStatus])
 
-  const clearBrowsingData = useCallback((): void => {
-    void clearSessionData().then(() => {
-      void window.devlens.historyClear().then(() => {
-        setHistory([])
-        void window.devlens.privacyDiskUsage().then(setDiskUsage)
-        showStatus('cookies, cache, site storage and history cleared')
-      })
+  const refreshDiskUsage = useCallback((): void => {
+    void window.devlens.privacyDiskUsage().then(setDiskUsage)
+  }, [])
+
+  const clearBrowsingDataSelected = useCallback(
+    async (request: ClearBrowsingDataRequest): Promise<ClearBrowsingDataResult> => {
+      const result = await window.devlens.privacyClearBrowsingData(request)
+      if (result.ok) {
+        if (request.history) setHistory([])
+        refreshDiskUsage()
+        showStatus(`cleared ${result.cleared.join(', ') || 'no browsing data'}`)
+      }
+      return result
+    },
+    [refreshDiskUsage, showStatus]
+  )
+
+  const runRetentionCleanup = useCallback((): void => {
+    void window.devlens.privacyRunRetentionCleanup().then(() => {
+      void refreshHistory()
+      refreshDiskUsage()
     })
-  }, [clearSessionData, showStatus])
+  }, [refreshDiskUsage, refreshHistory])
 
   const updateShieldRules = useCallback(
     (
@@ -2376,18 +2536,16 @@ export function App() {
     [savePrivacyPreferences]
   )
 
-  const updateHistoryRetention = useCallback(
-    (mode: PrivacyPreferences['historyRetention'], days: number): void => {
-      savePrivacyPreferences({ historyRetention: mode, retentionDays: days })
-      if (mode === 'incognito') {
+  const updateHistoryPolicy = useCallback(
+    (policy: HistoryPolicy): void => {
+      savePrivacyPreferences({ historyPolicy: policy })
+      if (policy === 'never') {
         void window.devlens.historyClear().then(() => setHistory([]))
         return
       }
-      if (mode === 'custom') {
-        void window.devlens.historyPrune(days).then(() => refreshHistory())
-      }
+      runRetentionCleanup()
     },
-    [refreshHistory, savePrivacyPreferences]
+    [runRetentionCleanup, savePrivacyPreferences]
   )
 
   const runFind = useCallback(
@@ -2542,6 +2700,19 @@ export function App() {
         return
       }
 
+      /** Refresh the active page, never the DevLens shell or its profile gate. */
+      if (
+        event.key === 'F5' ||
+        ((event.ctrlKey || event.metaKey) &&
+          !event.shiftKey &&
+          !event.altKey &&
+          event.key.toLowerCase() === 'r')
+      ) {
+        event.preventDefault()
+        reloadBoth()
+        return
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key === 'Tab' && tabs.length > 1) {
         event.preventDefault()
         const forward = !event.shiftKey
@@ -2676,6 +2847,7 @@ export function App() {
     openFindBar,
     openPrivateTab,
     openTab,
+    reloadBoth,
     selectTab,
     tabs
   ])
@@ -3376,8 +3548,20 @@ export function App() {
           return
         }
         case 'pin':
-          patchTab(tabId, { pinned: !tab.pinned })
-          if (!tab.pinned) moveTab(tabId, 'first')
+          {
+            const pinning = !tab.pinned
+            const updated = tabs.map((entry) =>
+              entry.id === tabId ? { ...entry, pinned: pinning } : entry
+            )
+            const nextTabs = pinning
+              ? [
+                  updated.find((entry) => entry.id === tabId)!,
+                  ...updated.filter((entry) => entry.id !== tabId)
+                ]
+              : updated
+            setTabs(nextTabs)
+            saveSessionForTabs(nextTabs, activeTab?.url ?? '')
+          }
           showStatus(tab.pinned ? 'tab unpinned' : 'tab pinned')
           return
         case 'unload':
@@ -3568,6 +3752,8 @@ export function App() {
       data-content-theme={resolvedContentTheme}
       data-density={effectiveDensity}
       data-density-preference={appearancePreferences.density}
+      data-ui-font={appearancePreferences.uiFont}
+      data-code-font={appearancePreferences.codeFont}
     >
       {/* Floating tab strip: the mode tokens are inherited from the root, so the accent
           changes with the mode without the strip knowing about modes at all. */}
@@ -3696,6 +3882,8 @@ export function App() {
         onToggleSidebar={toggleDeveloperArea}
         ideLabel={bootstrap.ide.entryFile}
         ideScheme={bootstrap.ide.scheme}
+        ideEditorLabel={ideEditorLabel}
+        ideEnabled={ideEnabled}
         mode={mode}
         modeBusy={modeBusy}
         layout={toolbarLayout}
@@ -3883,7 +4071,8 @@ export function App() {
             data-testid="viewport-canvas"
             data-surface={internalSurface ? 'internal' : 'web'}
             className={[
-              'viewport-canvas relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden',
+              'viewport-canvas relative min-h-0 flex-1',
+              activeInternal === 'settings' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
               capabilities.dualViewport && !internalSurface ? 'p-4' : 'p-0'
             ].join(' ')}
           >
@@ -4100,6 +4289,13 @@ export function App() {
                 onBack={() => openSettingsCategory('appearance')}
               />
             )}
+            {activeInternal === 'changelog' && (
+              <ChangelogPage
+                version={aboutInfo?.version}
+                onBack={() => openSettingsCategory('about')}
+                onOpenReleaseHistory={openAboutRoute}
+              />
+            )}
 
             {/* The shell's own pages, drawn by the content area for the same reason the dashboard
                 is: the tab strip, the toolbar and the status bar stay live around them. */}
@@ -4164,8 +4360,10 @@ export function App() {
                 onShieldMode={setShieldMode}
                 onShieldRules={updateShieldRules}
                 onNetworkSecurity={updateNetworkSecurity}
-                onHistoryRetention={updateHistoryRetention}
-                onClearBrowsingData={clearBrowsingData}
+                onHistoryPolicy={updateHistoryPolicy}
+                onClearBrowsingDataSelected={clearBrowsingDataSelected}
+                onRunRetentionCleanup={runRetentionCleanup}
+                onRefreshDiskUsage={refreshDiskUsage}
                 onSiteException={setSiteException}
                 onPrivacy={savePrivacyPreferences}
                 appearance={appearancePreferences}
@@ -4178,6 +4376,15 @@ export function App() {
                 profileAsk={profileAsk}
                 onProfileAsk={(ask) => void setAskOnStartup(ask)}
                 profileName={profiles.find((profile) => profile.active)?.name ?? 'Default'}
+                developer={developerPreferences}
+                ideOptions={ideOptions}
+                onDeveloperChange={saveDeveloperPreferences}
+                aboutInfo={aboutInfo}
+                aboutPreferences={aboutPreferences}
+                downloads={downloadPreferences}
+                onDownloads={saveDownloadPreferences}
+                onAboutChange={saveAboutPreferences}
+                onOpenAboutRoute={openAboutRoute}
               />
             )}
 

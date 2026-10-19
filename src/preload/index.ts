@@ -6,6 +6,7 @@ import type {
   AiAskResult,
   AiProviderInfo,
   AiStreamEvent,
+  AboutInfo,
   BootstrapPayload,
   BookmarkEntry,
   BookmarkLocation,
@@ -43,16 +44,22 @@ import type {
 } from '../shared/types'
 import type { ProtectionLevel } from '../shared/protection'
 import type { PrivateTabState } from '../shared/private-tab'
-import type { ProfilePreferences } from '../shared/preferences'
+import type { ProfilePreferences, ProfilePreferencesPatch } from '../shared/preferences'
 import type { OmniboxSettings } from '../shared/omnibox-settings'
 import type {
   LaunchpadSession,
   LaunchpadSystemState,
   LaunchpadWeather
 } from '../shared/launchpad'
-import type { ProfileDiskUsage, ShieldRules } from '../shared/privacy'
+import type {
+  ClearBrowsingDataRequest,
+  ClearBrowsingDataResult,
+  ProfileDiskUsage,
+  ShieldRules
+} from '../shared/privacy'
 import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
 import type { LanguagePreferences } from '../shared/languages'
+import type { IdeOption } from '../shared/ide'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): Unsubscribe {
   const handler = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
@@ -78,6 +85,7 @@ const api: DevLensApi = {
   /** Open a file (optionally at a line) in the configured editor via its URI scheme. */
   openInIde: (request: OpenInIdeRequest): Promise<OpenInIdeResult> =>
     ipcRenderer.invoke(IPC.openInIde, request),
+  ideList: (): Promise<IdeOption[]> => ipcRenderer.invoke(IPC.ideList),
 
   /** Console messages captured from the guests by the main process. */
   onConsoleLog: (listener: (entry: ConsoleLogEntry) => void): Unsubscribe =>
@@ -153,6 +161,8 @@ const api: DevLensApi = {
   onFindInPageRequested: (
     listener: (request: { webContentsId: number }) => void
   ): Unsubscribe => subscribe(IPC.findInPageRequested, listener),
+  onReloadViewportsRequested: (listener: () => void): Unsubscribe =>
+    subscribe(IPC.reloadViewportsRequested, listener),
 
   /* ---------------- Omnibox ---------------- */
 
@@ -228,7 +238,7 @@ const api: DevLensApi = {
   /* ---------------- per-profile preferences ---------------- */
 
   preferencesState: (): Promise<ProfilePreferences> => ipcRenderer.invoke(IPC.preferencesState),
-  preferencesSet: (patch: Partial<ProfilePreferences>): Promise<ProfilePreferences> =>
+  preferencesSet: (patch: ProfilePreferencesPatch): Promise<ProfilePreferences> =>
     ipcRenderer.invoke(IPC.preferencesSet, patch),
   onPreferencesChanged: (listener: (preferences: ProfilePreferences) => void): Unsubscribe =>
     subscribe(IPC.preferencesChanged, listener),
@@ -238,6 +248,12 @@ const api: DevLensApi = {
     dnsMode: 'system' | 'secure' | 'off'
   }): Promise<{ dnsMode: string }> => ipcRenderer.invoke(IPC.privacyApplyNetwork, input),
   privacyDiskUsage: (): Promise<ProfileDiskUsage> => ipcRenderer.invoke(IPC.privacyDiskUsage),
+  privacyClearBrowsingData: (
+    request: ClearBrowsingDataRequest
+  ): Promise<ClearBrowsingDataResult> =>
+    ipcRenderer.invoke(IPC.privacyClearBrowsingData, request),
+  privacyRunRetentionCleanup: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.privacyRunRetentionCleanup),
   appearanceApplyTheme: (mode: ContentThemeMode): Promise<ContentThemeMode> =>
     ipcRenderer.invoke(IPC.appearanceApplyTheme, mode),
   appearanceSetAppIcon: (style: AppIconStyle): Promise<AppIconStyle> =>
@@ -268,6 +284,11 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.omniboxSettingsSet, settings),
   onOmniboxSettingsChanged: (listener: (settings: OmniboxSettings) => void): Unsubscribe =>
     subscribe(IPC.omniboxSettingsChanged, listener),
+
+  /* The About page: version, Electron/Node/Chromium, OS, and the operator's update choices. */
+  aboutInfo: (): Promise<AboutInfo> => ipcRenderer.invoke(IPC.aboutInfo),
+  downloadsDefaultDirectory: (): Promise<string> => ipcRenderer.invoke(IPC.downloadsDefaultDirectory),
+  downloadsPickDirectory: (): Promise<boolean> => ipcRenderer.invoke(IPC.downloadsPickDirectory),
 
   /**
    * A guest asked for a new tab (`target=_blank`, ctrl-click, middle-click).

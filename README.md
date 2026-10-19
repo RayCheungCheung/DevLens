@@ -25,6 +25,30 @@ the DevLens Launchpad by default; New Tab and Homepage targets can be changed un
 | `npm run start` | Runs the built app (`out/`) without the dev server |
 | `npm run typecheck` | `tsc --noEmit` for main, preload and renderer |
 
+### Verification
+
+Run these from the workspace root. They use isolated user-data directories and fixture servers:
+
+```bash
+node work/verify/verify-repair.mjs
+node work/verify/verify-profiles.mjs
+node work/verify/verify-about.cjs
+node work/verify/verify-downloads.cjs
+node work/verify/verify-downloads-electron.cjs
+node work/verify/verify-fonts.mjs
+node work/verify/verify-browser-icons.mjs
+node work/verify/verify-app-icons.cjs
+node work/verify/verify-app-icons-electron.cjs
+node work/verify/verify-wallpapers.cjs
+node work/verify/verify-developer-quotes.cjs
+node work/verify/verify-browsing-data.mjs
+node work/verify/verify-startup-tabs.mjs
+```
+
+The current regression baseline is 63/63 settings/dashboard checks, 23/23 profile checks and
+11/11 About checks, plus the focused icon, wallpaper, quote, download, font and browsing-data
+suites described below.
+
 ## What is implemented
 
 **Dual-viewport canvas.** The same URL renders in a Mobile frame (375x812 by default,
@@ -81,11 +105,15 @@ small observations (plain HTTP target, authentication surface, state-changing en
 5xx responses, third-party origins). The panel renders the report live and exports it as
 Markdown or JSON - either through a save dialog or straight into `report.outputDir`.
 
-**Open in VS Code / click-to-source.** The toolbar button opens the configured entry file
-through the editor's URI scheme (`vscode://file/<absolute path>:<line>`). "Open source" on a
-console row maps the message's URL back to a file: `file://` URLs resolve directly, and
-`http://localhost:<port>/...` URLs resolve inside the configured workspace root (directory
-URLs fall back to `index.html`). Paths are never allowed to escape the workspace root.
+**Open in editor / click-to-source.** Developer workspace detects installed VS Code-compatible
+editors from system URI registrations (VS Code, Insiders, VSCodium, Cursor, CodeBuddy, CodeBuddy
+CN, Trae and Windsurf). A switch disables the whole hand-off and greys out the editor dropdown;
+the dropdown stores the choice per profile, and the toolbar label follows the selected editor.
+The hand-off opens the configured entry file through that
+editor's URI scheme (`editor://file/<absolute path>:<line>`). "Open source" on a console row maps
+the message's URL back to a file: `file://` URLs resolve directly, and
+`http://localhost:<port>/...` URLs resolve inside the configured workspace root (directory URLs
+fall back to `index.html`). Paths are never allowed to escape the workspace root.
 
 **Smart omnibox.** One field for addresses, searches and commands (see
 [Omnibox](#omnibox)). It detects addresses vs queries, offers a Firefox-style suggestion
@@ -138,7 +166,7 @@ main process uses it to decide what it enforces, the renderer to decide what it 
 | | Normal Mode (Max Privacy & Immersion) | Dev Mode (Weaponised Workspace) |
 | --- | --- | --- |
 | Layout | One clean pane, no frame chrome, no side panels | Dual viewport for web pages; system pages use the full canvas |
-| Toolbar | Navigation, omnibox, profiles, dashboard | Adds scroll sync, "Open in VS Code", sidebar toggle |
+| Toolbar | Navigation, omnibox, profiles, dashboard | Adds scroll sync, "Open in editor", sidebar toggle |
 | Dock | The everyday four: AI assistant, bookmarks, history, settings | Expands to the whole toolset below |
 | Panels | Everyday ones only: AI assistant, bookmarks, history, settings | Everything, including the developer tools |
 | Panel shortcuts | `Ctrl+Shift+C/I/R/A` do nothing, `>sec` and friends are refused with a reason | They open the matching panel |
@@ -160,7 +188,7 @@ Not a hidden button, not a gesture, not a keypress:
 - The dock offers the everyday four and nothing else - the list comes from `DOCK_TOOLS` in
   `src/shared/mode.ts`, so a developer tool is not hidden by CSS in normal mode, it is not in the
   rail. The panel column starts closed, and the resize handle only exists while it is open.
-- The toolbar drops the sidebar toggle, scroll sync, "Open in VS Code" and the active-viewport
+- The toolbar drops the sidebar toggle, scroll sync, "Open in editor" and the active-viewport
   badge. What remains is navigation, the omnibox, the bookmark star, the WImH shield, the mode
   switcher and the profile menu.
 - Every path that could open the developer area goes through one guarded helper that no-ops in
@@ -282,6 +310,10 @@ more than one identity and the prompt is on (`profile.askOnStartup`, default tru
 avatar and when it was last used, creates new ones with a name and a glyph, and carries the
 *Always ask on startup* switch. `:profile` (or `:user`) brings it back in-session, and the
 toolbar's profile menu switches identity without leaving the window.
+
+The gate is a once-per-launch surface. Once an identity has been chosen it is not replayed by a
+renderer reload, and `Ctrl/Cmd+R` or `F5` is routed to the active web page/viewports rather than
+the Electron shell.
 
 Isolation is the point, and it is enforced in three places rather than one:
 
@@ -577,16 +609,22 @@ existing Settings tab rather than creating another form.
 | `devlens:settings/home` | Launchpad: startup, targets, widgets, activity and wallpaper |
 | `devlens:settings/search` | Omnibox: default engine, engines, shortcuts and suggestions |
 | `devlens:settings/privacy` | DevLens Shield, data, retention, DNS and protocols |
-| `devlens:settings/appearance` | Content theme, workspace theme, app icon and density |
+| `devlens:settings/appearance` | Content theme, workspace theme, Browser Icons, Fonts and density |
 | `devlens:settings/themes` | Extended DevLens workspace theme gallery |
 | `devlens:settings/tabs` | Tab layout, interaction, containers, media and hardware |
-| `devlens:settings/developer` | AI provider and developer workspace information |
-| `devlens:settings/identity` | Profile and startup identity prompt |
+| `devlens:settings/downloads` | Download location, content handlers and fallback behavior |
 | `devlens:settings/languages` | Interface, web content, translation and spell check |
+| `devlens:settings/developer` | AI provider and installed editor hand-off |
+| `devlens:settings/identity` | Profile and startup identity prompt |
+| `devlens:settings/about` | Version, updates, diagnostics, license and community |
+| `devlens:changelog` | Offline release notes for the installed build |
 
 `devlens:settings` redirects to the home category. `devlens:settings/omnibox` is retained as
 an alias for the consolidated Omnibox category. Internal routes do not render the omnibox
 search/action switcher; it returns on ordinary web pages.
+
+The sidebar order is Launchpad, Omnibox, Privacy, Appearance, Tabs, Downloads, Languages,
+Developer workspace, Identity, About. The navigation and content panes scroll independently.
 
 ### Preference store
 
@@ -603,6 +641,9 @@ UI preferences are stored per profile in
 - `appearance`
 - `tabs`
 - `languages`
+- `developer`
+- `downloads`
+- `about`
 
 Active mode, protection counters and transient find state remain session state; profile-level
 choices that should survive a restart are written through `preferencesSet`.
@@ -612,14 +653,32 @@ choices that should survive a restart are written through `preferencesSet`.
 `devlens:settings/home` configures the start surface:
 
 - New Tab and Homepage targets: Launchpad, Blank Canvas or Custom URL.
-- Launch at login and restore-last-tabs behavior.
-- Default-browser detection and OS registration.
+- A Firefox-style Startup block with a restore dropdown (`Don't restore tabs`, `Pinned tabs only`,
+  `All previous tabs`), launch at login, and default-browser status refresh on focus. Session
+  entries preserve each tab's pinned flag so pinned-only startup is a real restart behavior.
+- A top-of-page default-browser card with guided setup, a `Nice choice.` success state and
+  Lensy (the DevLens mascot).
 - Widget switches for clocks, developer spotlight, quick snippets, system health, weather and
   the focus timer.
 - Recent/bookmark/download activity shelves.
-- A local wallpaper stored as a bounded data URL with a dim control.
+- Six built-in theme-aware wallpapers (including Lensy Night) plus a bounded custom-image data
+  URL, with a shared dim control.
+
+Wallpaper cards use a visible pressed/selected state and the chosen artwork is tinted by the active
+workspace theme (DevLens teal, Midnight indigo, Ocean cyan, Ember amber). Six built-in SVGs plus a
+custom-image option share the same dim and first-paint behavior.
 
 The last non-private tab set is written to the profile store and restored when enabled.
+
+Default browser now has its own Launchpad card. It guides first-time setup, then switches to a
+`Nice choice.` success state with three local-first/developer advantages and the DevLens mascot,
+Lensy.
+
+Lensy is shared artwork: the Default browser card uses its success expression, while the Privacy
+Shield status card uses a shield-holding variant.
+
+The Launchpad front page carries the signature `Build sharp. Inspect everything. — DevLens Team`.
+Dev Spotlight rotates through 100 developer quotes, with the current position shown in its header.
 
 ### Shield and privacy
 
@@ -627,6 +686,14 @@ The last non-private tab set is written to the profile store and restored when e
 modes, granular tracker categories, site storage exceptions, real profile disk usage, browsing
 data clearing, history retention, DNT/GPC, DoH and HTTPS-only navigation. Shield rules are sent
 to the main-process protection engine; DoH is applied through Electron's host resolver.
+
+The Browsing Data & History Retention block reports profile data plus Electron cache usage, opens
+a four-category Clear Browsing Data dialog, and keeps separate retain-on-clear site exceptions
+from Shield exceptions. Auto-Clear on Exit removes cookies and site data; History, Cookies and
+Cache each have independent expiration rules (`indefinitely`, 7/30/90 days, or on close).
+Remember, Never, and Keep Pinned Tabs Only are real history policies. Pinned-only cleanup runs on
+exit, preserves pinned-tab cookies/storage/history by host, and removes the rest. Retention
+cleanup runs at launch and hourly, with exit cleanup awaited before Electron quits.
 
 The Network Tunnel card reports its configuration and data limit. No VPN relay is bundled, so
 the card stays in standby until one is configured rather than pretending to be connected.
@@ -638,7 +705,15 @@ the card stays in standby until one is configured rather than pretending to be c
 - Website color scheme through `nativeTheme`: Follow System, Light or Dark.
 - DevLens workspace themes. Light/Dark changes the full shell token set; workspace themes
   recolor toolbars, tabs, sidebars and dashboard chrome.
-- Generated taskbar/window and macOS Dock icon styles.
+- A compact Browser Icon card opens a searchable gallery with 17 distinct taskbar, window and
+  macOS Dock marks across Standard, Minimal, Retro and Special collections. The picker and the
+  native rasterizer share the same vector artwork; every design carries a different hidden Lensy
+  easter egg, such as a peeking head, eyes in a node, a cable-like tail or antenna.
+- Fonts grids independently choose six installed interface families and five developer mono
+  families, with a large live specimen that shows the actual glyphs. Choices update the shell
+  through `--font-sans` / `--font-mono` and persist per profile with safe fallbacks for older
+  preference files. Font-picker labels and metadata intentionally use the fixed readable
+  `--font-ui-fixed` face; only the specimens preview the families being chosen.
 - Automatic, Standard, Compact or Touch UI density.
 - Direct links to page zoom, Launchpad and Dock/Sidebar layout controls.
 
@@ -659,6 +734,19 @@ web-content language preferences, local translation controls, offline model inst
 and developer spell-check languages. The primary language updates the shell document locale,
 and spell-check settings are applied to the active profile's Electron session. No on-device
 neural translation model is bundled yet.
+
+### Developer workspace
+
+`devlens:settings/developer` stores the AI provider and the editor hand-off preference. The editor
+dropdown is populated by querying the OS for registered URI handlers, so it only offers editors
+that can actually receive `editor://file/<absolute-path>:<line>` requests. The current build
+detects VS Code, VS Code Insiders, VSCodium, Cursor, CodeBuddy, CodeBuddy CN, Trae and Windsurf.
+A switch disables the hand-off as a unit: the whole editor control becomes inactive and greyed
+out, the toolbar action disappears, and the main process refuses direct IPC requests as well.
+
+The Developer workspace category placement is intentionally after Downloads and Languages. The
+toolbar label follows the selected editor, and the choice is stored in the profile's `developer`
+preference group.
 
 ## WImH - extreme defense mode
 
@@ -719,14 +807,14 @@ the main process as a data URL.
 | Widget | What it does |
 | --- | --- |
 | World clocks | Macao, Tokyo, London and San Francisco, live via `Intl` (so the two that observe DST stay right all year) |
-| Dev spotlight | A rotating developer quote; a chosen Launchpad wallpaper becomes the photo behind it |
+| Dev spotlight | Rotates through 100 developer quotes; a chosen Launchpad wallpaper becomes the photo behind it |
 | Quick snippets | A local command shelf with copy/remove controls, stored per profile |
 | System health | CPU threads, device memory, JS heap and current session request/error/tracker counters |
 | Weather | Main-process weather lookup using Open-Meteo; failures show an unavailable state |
 | Focus timer | 25-minute focus and 5-minute break rounds with start/pause, reset and a phase switch. It hands over to the other round at zero and waits to be started again; the round counter is session-only |
 | Checklist | A local task list: add, tick, remove, clear the done ones. Stored with `localStorage` under `devlens.checklist.<profileId>`, because the shell's own storage is shared between profiles - a task written while using "Work" should not be waiting in "Personal" |
 | Local servers | Probes the ports dev tooling actually binds to (Vite, Next, CRA, Angular, Storybook, Jupyter, plus the usual Docker-published databases and brokers), reads the `Server` header and the page title, and lists every one that answered. Servers pinned in `ntp.servers` come first. Clicking a card opens it in both viewports |
-| Workspaces | Dev mode only. An MRU list with the package name and the framework that owns the dev server; add a folder, set any entry active, and click-to-source plus "Open in VS Code" resolve inside it immediately |
+| Workspaces | Dev mode only. An MRU list with the package name and the framework that owns the dev server; add a folder, set any entry active, and click-to-source plus "Open in editor" resolve inside it immediately |
 | Session activity | Dev mode only: requests captured, failures, console errors and blocked trackers for the session you just had |
 | Omni-prefix cheat sheet | Generated from the same tables the parser uses, so it cannot drift. Clicking an entry fills the field with that prefix. Normal mode advertises only the entries it offers |
 
@@ -850,11 +938,14 @@ src/
     wimh.ts      extreme defense: RAM-only enforcement, scrubber, sentinel, window protection
     mode.ts      workspace mode truth: what normal vs dev actually enforces
     protection.ts protection dial: tracking tiers, header hardening, RAM-only switching
+    browsing-data.ts profile/cache clearing, retention schedules and pinned-only exit cleanup
     profiles.ts  profile registry, one persistent partition per identity
+    downloads.ts  download folder/handler enforcement and external protocol confirmation
     local-servers.ts  well known dev port probing for the dashboard
     workspaces.ts     workspace MRU and the active click-to-source root
     output.ts    text exports (save dialog or configured directory) and the clipboard
     ide.ts       editor URI composition and URL -> file resolution
+    ide-detect.ts installed editor detection through OS URI handlers
     config.ts    devlens.config.json loader with env overrides
     preferences.ts per-profile preference file, validation and migration
     app-icons.ts generated taskbar / Dock icon styles
@@ -868,6 +959,13 @@ src/
     src/components/DefenseOverlay.tsx  the on-demand WImH panel normal mode still offers
     src/components/ProtectionMenu.tsx  the security badge and the level dropdown
     src/components/SettingsPage.tsx    categorized Settings shell and category panels
+    src/components/AboutSettings.tsx   About, diagnostics, updates, license and Lensy
+    src/components/AppIconPicker.tsx   Browser Icon gallery and searchable collections
+    src/components/BrowsingDataSettings.tsx browsing cleanup, policies and expiration UI
+    src/components/ChangelogPage.tsx   offline bundled release notes
+    src/components/DefaultBrowserCard.tsx default-browser setup/success card
+    src/components/DownloadsSettings.tsx download folder and content-handler UI
+    src/components/LensyMascot.tsx     shared full, shield and peek mascot poses
     src/components/OmniboxSettings.tsx embedded engines/shortcuts editor for Omnibox settings
     src/components/ThemeManagerPage.tsx extended workspace-theme gallery
     src/components/VerticalTabs.tsx    optional vertical tab rail
@@ -894,6 +992,12 @@ src/
     launchpad.ts Launchpad targets, widgets, session and system-integration contracts
     privacy.ts   Shield, retention, DNS, disk-usage and privacy preferences
     appearance.ts content theme, workspace theme, app icon and density contracts
+    app-icon-art.ts 17 browser-icon designs, shared by the picker and native PNG renderer
+    about.ts     project links and bundled release-note copy
+    downloads.ts MIME/protocol handler contract and fallback policy
+    ide.ts       editor presets and installed-editor contracts
+    wallpapers.ts six built-in Launchpad wallpaper SVGs plus custom resolution
+    developer-quotes.ts 100 Spotlight quotes and the DevLens Team signature
     tabs.ts      tab layout, behavior, containers, hotkeys and media preferences
     languages.ts interface, web-content, translation and spell-check preferences
     mode.ts      the capability table both processes obey
@@ -1002,6 +1106,49 @@ Two things worth knowing:
   compose with React and expose `sendToHost`; Electron's forward-looking equivalent is
   `WebContentsView`, which would move the frames into the main process and drop this whole
   class of layout/compositing quirks.
+
+## Downloads & File Handlers
+
+Open `devlens:settings/downloads` to choose a download folder, enable Save As prompts, configure
+MIME and protocol handlers, and choose the fallback for unhandled downloads. The native folder
+picker saves its result only to the profile that opened it. An empty folder preference uses the
+operating system's Downloads directory. Automatic saves preserve existing files by adding a
+numbered suffix, including when multiple downloads start together.
+
+AVIF, XML, PDF, SVG and WebP have built-in viewer defaults. Supported document/image MIME types
+can open in DevLens, save, ask each time, or use a system app. Custom MIME types and protocols
+can be added; custom entries can be removed. Protocols support asking or using a system app;
+they cannot be rendered or saved as files. External app launches require native confirmation.
+Content-type preferences apply to top-level documents and downloads, leaving page subresources
+and error responses alone. Unhandled files can save automatically or ask whether to open/save.
+
+Settings live in the profile's `downloads` preferences. Running transfers retain their original
+profile's settings across a switch. Private-tab/window closure optionally clears Chromium's
+download history via `Session.clearData({ dataTypes: ['downloads'] })`, which keeps saved files.
+Existing Max Protection download blocks remain enforced for private, ghost and defense sessions.
+
+From the workspace root, run `node work/verify/verify-downloads.cjs` for isolated controller,
+store and rendering checks, and `node work/verify/verify-downloads-electron.cjs` for real hidden
+Electron download, viewer and cleanup checks. All fixtures stay under `work/verify/out`.
+
+## About DevLens & System Updates
+
+Open `devlens:settings/about` for the installed app version, runtime diagnostics, MIT license,
+release history and community shortcuts. `Copy System Info` uses the existing guarded clipboard
+bridge and includes Electron, Node.js, Chromium, OS and architecture. Bundled release notes are
+available offline at `devlens:changelog`.
+
+Stable, Dev Nightly and Beta channels, plus automatic, manual and background update strategies,
+are saved under `about` in each profile's preference store. The source distribution has no
+update feed, installer integration or background service configured, so the page reports
+`Update status unavailable`; these choices currently store preferences only. It displays
+`DevLens is up to date` only when a configured updater supplies that status. Published release
+history opens the project's GitHub releases page. The Discord shortcut retains the supplied
+`discord.gg/devlens` invite; replace it in `src/shared/about.ts` if the community uses another invite.
+
+Verify the About page's routing, preference persistence, profile isolation and rendered content
+from the workspace root with `node work/verify/verify-about.cjs`. Run `npm run typecheck` in
+`outputs/devlens` for all three TypeScript projects (`tsc --noEmit`).
 
 ## Sensible next steps
 

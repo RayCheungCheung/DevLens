@@ -10,6 +10,7 @@ import type {
   ViewportPhase
 } from '../shared/types'
 import { isMonitoringEnabled, noteLeaseConsole } from './mode'
+import { handleExternalProtocol } from './downloads'
 
 type Emit = (channel: string, payload: unknown) => void
 
@@ -106,13 +107,22 @@ function popupWindowOptions(partition: string | undefined): Electron.BrowserWind
  * navigate itself into a local scheme or into the shell's own pages.
  */
 function hardenPopup(window: BrowserWindow, partition: string | undefined): void {
-  window.webContents.setWindowOpenHandler(({ url }) =>
-    isOpenable(url)
-      ? { action: 'allow', overrideBrowserWindowOptions: popupWindowOptions(partition) }
-      : { action: 'deny' }
-  )
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isOpenable(url)) return { action: 'allow', overrideBrowserWindowOptions: popupWindowOptions(partition) }
+    void handleExternalProtocol(window.webContents, url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, target) => {
-    if (!NAVIGABLE.test(target)) event.preventDefault()
+    if (!NAVIGABLE.test(target)) {
+      event.preventDefault()
+      void handleExternalProtocol(window.webContents, target)
+    }
+  })
+  window.webContents.on('will-redirect', (event) => {
+    if (!NAVIGABLE.test(event.url)) {
+      event.preventDefault()
+      void handleExternalProtocol(window.webContents, event.url)
+    }
   })
 }
 
@@ -135,7 +145,10 @@ export function instrumentGuest(contents: WebContents): void {
    * becoming a stray 520x700 window.
    */
   contents.setWindowOpenHandler(({ url, disposition }) => {
-    if (!isOpenable(url)) return { action: 'deny' }
+    if (!isOpenable(url)) {
+      void handleExternalProtocol(contents, url)
+      return { action: 'deny' }
+    }
     if (disposition === 'new-window' || disposition === 'other') {
       return { action: 'allow', overrideBrowserWindowOptions: popupWindowOptions(partitionOf()) }
     }
@@ -160,7 +173,10 @@ export function instrumentGuest(contents: WebContents): void {
    * `devlens:` pages, `javascript:`, arbitrary protocol handlers).
    */
   contents.on('will-navigate', (event, target) => {
-    if (!NAVIGABLE.test(target)) event.preventDefault()
+    if (!NAVIGABLE.test(target)) {
+      event.preventDefault()
+      void handleExternalProtocol(contents, target)
+    }
   })
 
   // Electron hands the payload over on the event object itself; the trailing
@@ -201,6 +217,11 @@ export function instrumentGuest(contents: WebContents): void {
   })
   contents.on('will-redirect', (details) => {
     if (!details.isMainFrame) return
+    if (!NAVIGABLE.test(details.url)) {
+      details.preventDefault()
+      void handleExternalProtocol(contents, details.url)
+      return
+    }
     emitStatus(guestId, guestViewIds.get(guestId), 'loading', details.url)
   })
 
@@ -212,8 +233,13 @@ export function instrumentGuest(contents: WebContents): void {
    * handles Ctrl/Cmd + wheel because Electron's `before-input-event` is keyboard-only.
    */
   contents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || !(input.control || input.meta)) return
-    if (input.shift || input.key.toLowerCase() !== 'f') return
+    if (input.type !== 'keyDown') return
+    if (input.key === 'F5' || ((input.control || input.meta) && !input.shift && !input.alt && input.key.toLowerCase() === 'r')) {
+      event.preventDefault()
+      emitter(IPC.reloadViewportsRequested, { webContentsId: guestId })
+      return
+    }
+    if (!(input.control || input.meta) || input.shift || input.key.toLowerCase() !== 'f') return
     event.preventDefault()
     emitter(IPC.findInPageRequested, { webContentsId: guestId })
   })

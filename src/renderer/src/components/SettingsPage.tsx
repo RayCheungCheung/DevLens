@@ -5,8 +5,10 @@ import {
   Check,
   ChevronRight,
   Compass,
+  Download,
   Globe2,
   House,
+  Info,
   LayoutPanelTop,
   Languages,
   Palette,
@@ -21,33 +23,45 @@ import {
 import { AI_SITES, type AiSiteId } from '@shared/ai-sites'
 import type { BookmarkOptions, ProtectionState } from '@shared/types'
 import {
+  type AboutPreferences,
   type BrowserPreferences,
+  type DeveloperPreferences,
   type SidebarTogglePosition,
   type ToolbarLayout,
   type ToolbarTools
 } from '@shared/preferences'
+import type { IdeOption } from '@shared/ide'
 import type {
   LaunchpadActivity,
   LaunchpadPreferences,
   LaunchpadSystemState,
   LaunchpadWidgets,
-  LaunchTarget
+  LaunchTarget,
+  StartupTabMode
 } from '@shared/launchpad'
+import {
+  resolveLaunchpadWallpaper,
+  WALLPAPER_PRESETS
+} from '@shared/wallpapers'
 import type { OmniboxSettings } from '@shared/omnibox-settings'
 import type { SettingsCategoryId } from '@shared/routes'
 import type {
+  ClearBrowsingDataRequest,
+  ClearBrowsingDataResult,
   DnsMode,
-  HistoryRetentionMode,
+  HistoryPolicy,
   PrivacyPreferences,
   ProfileDiskUsage,
   ShieldMode
 } from '@shared/privacy'
 import {
-  APP_ICON_STYLES,
+  CODE_FONTS,
+  INTERFACE_FONTS,
   WORKSPACE_THEMES,
+  type CodeFontId,
   type AppearancePreferences,
-  type AppIconStyle,
   type ContentThemeMode,
+  type UiFontId,
   type UiDensity,
   type WorkspaceThemeId
 } from '@shared/appearance'
@@ -64,7 +78,15 @@ import {
 } from '@shared/protection'
 import { AiMark } from '@renderer/components/AiMark'
 import { OmniboxSettingsContent } from '@renderer/components/OmniboxSettings'
-import { DevLensMark } from '@renderer/components/DevLensMark'
+import { AboutSettingsContent } from '@renderer/components/AboutSettings'
+import { DownloadsSettingsContent } from '@renderer/components/DownloadsSettings'
+import { BrowsingDataSettingsContent } from '@renderer/components/BrowsingDataSettings'
+import { DefaultBrowserCard } from '@renderer/components/DefaultBrowserCard'
+import { LensyMascot } from '@renderer/components/LensyMascot'
+import type { DownloadPreferences, DownloadPreferencesPatch } from '@shared/downloads'
+import { AppIconPicker, AppIconPreview } from '@renderer/components/AppIconPicker'
+import { appIconDesign } from '@shared/app-icon-art'
+import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -99,8 +121,12 @@ interface SettingsPageProps {
     >
   ) => void
   onNetworkSecurity: (patch: Pick<PrivacyPreferences, 'dnsMode' | 'httpsOnly'>) => void
-  onHistoryRetention: (mode: HistoryRetentionMode, days: number) => void
-  onClearBrowsingData: () => void
+  onHistoryPolicy: (policy: HistoryPolicy) => void
+  onClearBrowsingDataSelected: (
+    request: ClearBrowsingDataRequest
+  ) => Promise<ClearBrowsingDataResult>
+  onRunRetentionCleanup: () => void
+  onRefreshDiskUsage: () => void
   onSiteException: (site: string, allowed: boolean) => void
   onPrivacy: (patch: Partial<PrivacyPreferences>) => void
   appearance: AppearancePreferences
@@ -113,6 +139,18 @@ interface SettingsPageProps {
   profileAsk: boolean
   onProfileAsk: (ask: boolean) => void
   profileName: string
+  developer: DeveloperPreferences
+  ideOptions: IdeOption[]
+  onDeveloperChange: (patch: Partial<DeveloperPreferences>) => void
+  /** System and version info shown by the About page, or null while main has not answered. */
+  aboutInfo: AboutInfo | null
+  aboutPreferences: AboutPreferences
+  downloads: DownloadPreferences
+  onDownloads: (patch: DownloadPreferencesPatch) => void
+  /** Called when the operator changes the update channel or strategy on the About page. */
+  onAboutChange: (patch: Partial<{ updateChannel: UpdateChannel; updateStrategy: UpdateStrategy }>) => void
+  /** Opens a `devlens:` or external URL as a tab, for changelog and community links. */
+  onOpenAboutRoute: (url: string) => void
 }
 
 const CATEGORIES: {
@@ -126,9 +164,11 @@ const CATEGORIES: {
   { id: 'privacy', label: 'Privacy and security', summary: 'Protection and data', icon: ShieldCheck },
   { id: 'appearance', label: 'Appearance', summary: 'Toolbar, bookmarks and zoom', icon: Palette },
   { id: 'tabs', label: 'Tabs and browsing', summary: 'Bookmark behavior', icon: PanelsTopLeft },
+  { id: 'downloads', label: 'Downloads & File Handlers', summary: 'Save locations and content types', icon: Download },
+  { id: 'languages', label: 'Languages & Localization', summary: 'Interface, web and translation', icon: Languages },
   { id: 'developer', label: 'Developer workspace', summary: 'AI and tooling', icon: Wrench },
   { id: 'identity', label: 'Identity', summary: 'Profile and startup prompt', icon: UserRound },
-  { id: 'languages', label: 'Languages & Localization', summary: 'Interface, web and translation', icon: Languages }
+  { id: 'about', label: 'About DevLens & System Updates', summary: 'Version, updates and license', icon: Info }
 ]
 
 const TOOL_ROWS: { key: keyof ToolbarTools; label: string; detail: string }[] = [
@@ -157,13 +197,6 @@ const TARGET_LABELS: Record<LaunchTarget, string> = {
   launchpad: 'Launchpad',
   blank: 'Blank Canvas',
   custom: 'Custom URL'
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB'
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 /**
@@ -201,8 +234,10 @@ export function SettingsPage({
   onShieldMode,
   onShieldRules,
   onNetworkSecurity,
-  onHistoryRetention,
-  onClearBrowsingData,
+  onHistoryPolicy,
+  onClearBrowsingDataSelected,
+  onRunRetentionCleanup,
+  onRefreshDiskUsage,
   onSiteException,
   onPrivacy,
   appearance,
@@ -214,13 +249,35 @@ export function SettingsPage({
   onLanguages,
   profileAsk,
   onProfileAsk,
-  profileName
+  profileName,
+  developer,
+  ideOptions,
+  onDeveloperChange,
+  aboutInfo,
+  aboutPreferences,
+  downloads,
+  onDownloads,
+  onAboutChange,
+  onOpenAboutRoute
 }: SettingsPageProps) {
   const [filter, setFilter] = useState('')
   const [homeDraft, setHomeDraft] = useState(launchpad.customUrl)
   const [weatherDraft, setWeatherDraft] = useState(launchpad.weatherPlace)
   const [exceptionDraft, setExceptionDraft] = useState('')
   const [webLanguageDraft, setWebLanguageDraft] = useState('zh-CN')
+  const [iconPickerOpen, setIconPickerOpen] = useState(false)
+  const selectedUiFont =
+    INTERFACE_FONTS.find((font) => font.id === appearance.uiFont) ?? INTERFACE_FONTS[0]
+  const selectedCodeFont = CODE_FONTS.find((font) => font.id === appearance.codeFont) ?? CODE_FONTS[0]
+  const savedTabCount = launchpad.session.tabs.length
+  const pinnedTabCount = launchpad.session.tabs.filter((tab) => tab.pinned).length
+  const wallpaperUrl = resolveLaunchpadWallpaper(launchpad)
+  const startupTabsDetail =
+    launchpad.startupTabs === 'pinned'
+      ? `${pinnedTabCount} pinned tab${pinnedTabCount === 1 ? '' : 's'} will open at startup.`
+      : launchpad.startupTabs === 'all'
+        ? `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'} will open at startup.`
+        : `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'}; startup restore is off.`
 
   useEffect(() => setHomeDraft(launchpad.customUrl), [launchpad.customUrl])
   useEffect(() => setWeatherDraft(launchpad.weatherPlace), [launchpad.weatherPlace])
@@ -300,12 +357,12 @@ export function SettingsPage({
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-ink-950"
+      className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-ink-950"
       data-testid="settings-page"
       data-settings-category={category}
     >
-      <aside className="flex w-[252px] shrink-0 flex-col border-r border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-900)_82%,transparent)]">
-        <div className="px-4 pb-4 pt-5">
+      <aside className="flex min-h-0 w-[252px] shrink-0 flex-col overflow-hidden border-r border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-900)_82%,transparent)]">
+        <div className="shrink-0 px-4 pb-4 pt-5">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]">
               <SlidersHorizontal size={16} />
@@ -331,7 +388,7 @@ export function SettingsPage({
           </label>
         </div>
 
-        <nav aria-label="Settings categories" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <nav aria-label="Settings categories" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-3">
           {filteredCategories.map((entry) => {
             const Icon = entry.icon
             const selected = entry.id === category
@@ -366,7 +423,7 @@ export function SettingsPage({
           )}
         </nav>
 
-        <div className="border-t border-[var(--devlens-hairline)] px-3 py-3">
+        <div className="shrink-0 border-t border-[var(--devlens-hairline)] px-3 py-3">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-400/15 font-mono text-[10px] uppercase text-teal-100">
               {profileName.slice(0, 1) || 'U'}
@@ -379,50 +436,48 @@ export function SettingsPage({
         </div>
       </aside>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div data-testid="settings-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain">
         <div className="mx-auto w-full max-w-[880px] px-8 py-7">
           <header className="mb-5">
             <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--devlens-accent)]">
               {current.summary}
             </p>
-            <h2 className="mt-1 text-[22px] font-semibold text-ink-100">{current.label}</h2>
+            <h2 className="mt-1 text-[22px] font-semibold text-ink-100">{category === 'downloads' ? 'DevLens Downloads & File Handlers' : current.label}</h2>
           </header>
 
           {category === 'home' && (
             <div className="flex flex-col gap-4">
+              <DefaultBrowserCard
+                isDefaultBrowser={systemIntegration.isDefaultBrowser}
+                busy={systemIntegrationBusy}
+                onSetDefault={onSetDefaultBrowser}
+              />
+
               <SettingsCard
-                title="Startup & Integration"
-                detail="Make DevLens the browser you reach for, and decide what happens when Windows starts."
+                title="Startup"
+                detail="Choose what DevLens restores and checks when it opens."
               >
                 <div className="divide-y divide-white/[0.05]">
                   <SettingRow
-                    label="Default browser"
-                    detail={
-                      systemIntegration.isDefaultBrowser
-                        ? 'DevLens is registered for HTTP and HTTPS.'
-                        : 'Register DevLens with the operating system for web links.'
-                    }
+                    label="Open previous windows and tabs"
+                    detail={startupTabsDetail}
                   >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={[
-                          'h-1.5 w-1.5 rounded-full',
-                          systemIntegration.isDefaultBrowser ? 'bg-emerald-400' : 'bg-amber-400'
-                        ].join(' ')}
-                      />
-                      <button
-                        type="button"
-                        data-testid="launchpad-set-default-browser"
-                        disabled={systemIntegrationBusy || systemIntegration.isDefaultBrowser}
-                        onClick={onSetDefaultBrowser}
-                        className="h-8 rounded-md border border-[var(--devlens-hairline)] px-2.5 text-[10px] text-ink-200 hover:border-[var(--devlens-accent-line)] disabled:cursor-default disabled:text-ink-500"
-                      >
-                        {systemIntegration.isDefaultBrowser ? 'Default browser' : 'Set as default'}
-                      </button>
-                    </div>
+                    <select
+                      data-testid="launchpad-startup-tabs"
+                      aria-label="Open previous windows and tabs"
+                      value={launchpad.startupTabs}
+                      onChange={(event) =>
+                        onLaunchpad({ startupTabs: event.target.value as StartupTabMode })
+                      }
+                      className="h-8 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[10px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
+                    >
+                      <option value="none">Don't restore tabs</option>
+                      <option value="pinned">Pinned tabs only</option>
+                      <option value="all">All previous tabs</option>
+                    </select>
                   </SettingRow>
                   <SettingRow
-                    label="Launch at login"
+                    label="Open DevLens automatically when your computer starts up"
                     detail="Start DevLens when you sign in to this computer."
                   >
                     <Switch
@@ -433,15 +488,13 @@ export function SettingsPage({
                     />
                   </SettingRow>
                   <SettingRow
-                    label="Restore last tabs"
-                    detail={`${launchpad.session.tabs.length} restorable tab${
-                      launchpad.session.tabs.length === 1 ? '' : 's'
-                    } saved for this profile.`}
+                    label="Always check if DevLens is your default browser"
+                    detail="Refresh default-browser status whenever the DevLens window gains focus."
                   >
                     <Switch
-                      checked={launchpad.restoreLastTabs}
-                      testId="launchpad-restore-tabs"
-                      onChange={(checked) => onLaunchpad({ restoreLastTabs: checked })}
+                      checked={launchpad.checkDefaultBrowser}
+                      testId="launchpad-check-default-browser"
+                      onChange={(checked) => onLaunchpad({ checkDefaultBrowser: checked })}
                     />
                   </SettingRow>
                 </div>
@@ -560,42 +613,93 @@ export function SettingsPage({
                     </SettingRow>
                   ))}
                 </div>
-                <div className="mt-4 flex flex-col gap-3 rounded-md border border-[var(--devlens-hairline)] p-3 sm:flex-row sm:items-center">
-                  <div
-                    className="h-16 w-28 shrink-0 rounded border border-white/10 bg-cover bg-center"
-                    style={
-                      launchpad.wallpaper
-                        ? { backgroundImage: `url(${launchpad.wallpaper})` }
-                        : { background: 'var(--devlens-accent-soft)' }
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-ink-200">Launchpad wallpaper</p>
-                    <p className="mt-0.5 text-[10px] text-ink-500">
-                      {launchpad.wallpaper ? 'Stored with this profile.' : 'Theme surface is in use.'}
-                    </p>
+                <div className="mt-4">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] text-ink-200">Launchpad wallpaper</p>
+                      <p className="mt-0.5 text-[10px] text-ink-500">
+                        Built-in artwork or an image from this computer.
+                      </p>
+                    </div>
+                    <span data-testid="launchpad-wallpaper-active-label" className="font-mono text-[9px] text-ink-600">
+                      {launchpad.wallpaperPreset === 'custom'
+                        ? 'Custom image'
+                        : WALLPAPER_PRESETS.find((preset) => preset.id === launchpad.wallpaperPreset)?.label ??
+                          'Theme surface'}
+                    </span>
                   </div>
-                  <div className="flex shrink-0 gap-1.5">
+                  <div data-testid="launchpad-wallpaper-gallery" className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {WALLPAPER_PRESETS.map((preset) => {
+                      const selected = launchpad.wallpaperPreset === preset.id
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          aria-pressed={selected}
+                          data-selected={selected}
+                          data-testid={`launchpad-wallpaper-preset-${preset.id}`}
+                          onClick={() => onLaunchpad({ wallpaperPreset: preset.id, wallpaper: '' })}
+                          className={[
+                            'group relative aspect-video min-w-0 overflow-hidden rounded-md border text-left transition-all active:scale-[0.985]',
+                            selected
+                              ? 'border-[var(--devlens-accent-line)] ring-1 ring-[var(--devlens-accent-line)]'
+                              : 'border-[var(--devlens-hairline)] hover:border-white/25'
+                          ].join(' ')}
+                          style={{ backgroundImage: `url("${preset.image}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                        >
+                          <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pb-1.5 pt-5">
+                            <span className="block truncate text-[9px] text-white">{preset.label}</span>
+                          </span>
+                          {selected && <span className="pointer-events-none absolute inset-0 bg-[var(--devlens-accent)]/12" />}
+                          {selected && (
+                            <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--devlens-accent)] text-ink-950">
+                              <Check size={9} strokeWidth={3} />
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                     <button
                       type="button"
+                      aria-pressed={launchpad.wallpaperPreset === 'none'}
+                      data-selected={launchpad.wallpaperPreset === 'none'}
+                      data-testid="launchpad-wallpaper-none"
+                      onClick={() => onLaunchpad({ wallpaperPreset: 'none', wallpaper: '' })}
+                      className={[
+                        'flex aspect-video min-w-0 flex-col items-center justify-center rounded-md border bg-[var(--devlens-accent-soft)] px-2 text-center transition-transform active:scale-[0.985]',
+                        launchpad.wallpaperPreset === 'none'
+                          ? 'border-[var(--devlens-accent-line)] ring-1 ring-[var(--devlens-accent-line)]'
+                          : 'border-[var(--devlens-hairline)] hover:border-white/25'
+                      ].join(' ')}
+                    >
+                      <span className="text-[9px] text-ink-200">Theme surface</span>
+                      <span className="mt-0.5 text-[8px] text-ink-500">No image</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={launchpad.wallpaperPreset === 'custom'}
+                      data-selected={launchpad.wallpaperPreset === 'custom'}
                       data-testid="launchpad-choose-wallpaper"
                       onClick={onChooseWallpaper}
-                      className="h-8 rounded-md border border-[var(--devlens-hairline)] px-2.5 text-[10px] text-ink-200 hover:border-[var(--devlens-accent-line)]"
+                      className={[
+                        'relative flex aspect-video min-w-0 flex-col items-center justify-center overflow-hidden rounded-md border bg-black/20 px-2 text-center transition-transform active:scale-[0.985]',
+                        launchpad.wallpaperPreset === 'custom'
+                          ? 'border-[var(--devlens-accent-line)] ring-1 ring-[var(--devlens-accent-line)]'
+                          : 'border-dashed border-[var(--devlens-hairline)] hover:border-white/25'
+                      ].join(' ')}
+                      style={
+                        launchpad.wallpaper
+                          ? { backgroundImage: `url("${launchpad.wallpaper}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                          : undefined
+                      }
                     >
-                      Choose image
+                      {launchpad.wallpaper && <span className="absolute inset-0 bg-black/45" />}
+                      <span className="relative text-[9px] text-white">Custom image</span>
+                      <span className="relative mt-0.5 text-[8px] text-ink-300">Choose image…</span>
                     </button>
-                    {launchpad.wallpaper && (
-                      <button
-                        type="button"
-                        onClick={() => onLaunchpad({ wallpaper: '' })}
-                        className="h-8 rounded-md border border-[var(--devlens-hairline)] px-2 text-[10px] text-ink-400 hover:text-rose-200"
-                      >
-                        Clear
-                      </button>
-                    )}
                   </div>
                 </div>
-                {launchpad.wallpaper && (
+                {wallpaperUrl && (
                   <div className="mt-3 flex items-center gap-3">
                     <span className="text-[10px] text-ink-500">Dim</span>
                     <input
@@ -633,10 +737,11 @@ export function SettingsPage({
                 title="DevLens Shield Status"
                 detail="Live protection state from the local request engine."
               >
-                <div className="flex flex-wrap items-center gap-4 rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-4 py-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--devlens-accent-line)] bg-ink-950/60 text-[var(--devlens-accent)]">
-                    <ShieldCheck size={19} />
-                  </span>
+                <div
+                  data-testid="privacy-shield-status"
+                  className="flex flex-wrap items-center gap-4 rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-4 py-3"
+                >
+                  <LensyMascot shield size={62} showName={false} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-medium text-ink-100">DevLens Shield Active</p>
                     <p className="mt-0.5 text-[10px] text-ink-400">
@@ -645,11 +750,13 @@ export function SettingsPage({
                         : 'compatibility-first coverage'}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p data-testid="shield-blocked-count" className="font-mono text-[24px] leading-6 text-ink-100">
-                      {protection.blockedRequests}
-                    </p>
-                    <p className="text-[9px] uppercase tracking-wide text-ink-500">trackers blocked</p>
+                  <div className="ml-auto flex items-center gap-4">
+                    <div className="text-right">
+                      <p data-testid="shield-blocked-count" className="font-mono text-[24px] leading-6 text-ink-100">
+                        {protection.blockedRequests}
+                      </p>
+                      <p className="text-[9px] uppercase tracking-wide text-ink-500">trackers blocked</p>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-ink-500 sm:grid-cols-4">
@@ -781,31 +888,20 @@ export function SettingsPage({
                 </div>
               </SettingsCard>
 
-              <SettingsCard
-                title="Storage & Browsing Data"
-                detail="Disk usage is measured from this profile's local data directory."
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--devlens-hairline)] px-3 py-2.5">
-                  <div>
-                    <p data-testid="privacy-disk-usage" className="font-mono text-[16px] text-ink-100">
-                      {formatBytes(diskUsage.bytes)} used
-                    </p>
-                    <p className="text-[10px] text-ink-500">
-                      {diskUsage.files} local file{diskUsage.files === 1 ? '' : 's'} in this profile
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    data-testid="privacy-clear-browsing-data"
-                    onClick={onClearBrowsingData}
-                    className="flex h-8 items-center gap-1.5 rounded-md border border-white/10 px-2.5 text-[10px] text-ink-200 hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-200"
-                  >
-                    <Trash2 size={12} />
-                    Clear Browsing Data
-                  </button>
-                </div>
+              <BrowsingDataSettingsContent
+                privacy={privacy}
+                diskUsage={diskUsage}
+                onPrivacy={onPrivacy}
+                onHistoryPolicy={onHistoryPolicy}
+                onClearBrowsingData={onClearBrowsingDataSelected}
+                onRunCleanup={onRunRetentionCleanup}
+                onRefreshUsage={onRefreshDiskUsage}
+              />
 
-                <p className="mt-4 mb-1.5 text-[10px] text-ink-400">Site Storage Exceptions</p>
+              <SettingsCard
+                title="Shield Site Exceptions"
+                detail="Domains exempt from DevLens Shield filtering. Browsing-data retention has its own exceptions."
+              >
                 <div className="flex items-center gap-1.5">
                   <input
                     value={exceptionDraft}
@@ -849,49 +945,6 @@ export function SettingsPage({
                     <li className="py-2 text-[10px] text-ink-600">No site exceptions.</li>
                   )}
                 </ul>
-              </SettingsCard>
-
-              <SettingsCard
-                title="Privacy Mode & History Retention"
-                detail="Incognito-only stops history writes immediately; custom retention is pruned now and at launch."
-              >
-                <Segmented
-                  value={privacy.historyRetention}
-                  testId="privacy-history-retention"
-                  onChange={(value) =>
-                    onHistoryRetention(value as HistoryRetentionMode, privacy.retentionDays)
-                  }
-                  options={[
-                    { value: 'always', label: 'Always record' },
-                    { value: 'custom', label: 'Custom rules' },
-                    { value: 'incognito', label: 'Incognito only' }
-                  ]}
-                />
-                {privacy.historyRetention === 'custom' && (
-                  <label className="mt-3 flex items-center gap-2 text-[10px] text-ink-400">
-                    Keep history for
-                    <input
-                      type="number"
-                      min={1}
-                      max={3650}
-                      value={privacy.retentionDays}
-                      data-testid="privacy-retention-days"
-                      onChange={(event) =>
-                        onPrivacy({
-                          retentionDays: Math.max(1, Number(event.target.value) || 1)
-                        })
-                      }
-                      onBlur={(event) =>
-                        onHistoryRetention(
-                          'custom',
-                          Math.max(1, Number(event.currentTarget.value) || 1)
-                        )
-                      }
-                      className="h-7 w-20 rounded border border-[var(--devlens-hairline)] bg-black/20 px-2 font-mono text-[10px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-                    />
-                    day(s)
-                  </label>
-                )}
               </SettingsCard>
 
               <SettingsCard
@@ -1039,38 +1092,179 @@ export function SettingsPage({
               </SettingsCard>
 
               <SettingsCard
-                title="Application App Icon"
-                detail="Change the taskbar, desktop window and Dock icon style."
+                title="Browser Icon"
+                detail="Choose a custom icon for your taskbar, desktop and Start menu."
               >
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                  {APP_ICON_STYLES.map((icon) => {
-                    const selected = appearance.appIcon === icon.id
-                    return (
-                      <button
-                        key={icon.id}
-                        type="button"
-                        aria-pressed={selected}
-                        data-testid={`appearance-icon-${icon.id}`}
-                        onClick={() => onAppearance({ appIcon: icon.id as AppIconStyle })}
-                        className={[
-                          'flex min-w-0 flex-col items-center gap-2 rounded-md border px-2 py-2.5 transition-colors',
-                          selected
-                            ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
-                            : 'border-[var(--devlens-hairline)] hover:bg-white/[0.03]'
-                        ].join(' ')}
+                <div data-testid="appearance-browser-icon" className="flex flex-wrap items-center gap-3.5">
+                  <AppIconPreview style={appearance.appIcon} size={54} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[12px] font-medium text-ink-100">{appIconDesign(appearance.appIcon).label}</p>
+                      <span className="rounded-full bg-[var(--devlens-accent-soft)] px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--devlens-accent)]">
+                        New
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-ink-500">
+                      A distinctive browser mark for the taskbar, desktop and Start menu.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="appearance-change-icon"
+                    onClick={() => setIconPickerOpen(true)}
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--devlens-hairline)] px-3 py-2 text-[10px] text-ink-200 hover:border-[var(--devlens-accent-line)] hover:bg-white/[0.03]"
+                  >
+                    Change browser icon
+                    <ChevronRight size={11} />
+                  </button>
+                </div>
+              </SettingsCard>
+
+              <SettingsCard
+                title="Fonts"
+                detail="Choose typefaces for DevLens chrome and developer surfaces."
+              >
+                <div
+                  data-testid="appearance-fonts"
+                  style={{ fontFamily: 'var(--font-ui-fixed)' }}
+                >
+                  <div
+                    data-testid="appearance-font-preview"
+                    className="mb-4 overflow-hidden rounded-md border border-[var(--devlens-hairline)] bg-black/20"
+                  >
+                    <div className="flex items-center justify-between gap-3 border-b border-[var(--devlens-hairline)] px-3.5 py-2">
+                      <span className="text-[8px] uppercase tracking-[0.16em] text-ink-500">
+                        Live specimen
+                      </span>
+                      <span className="flex items-center gap-1 text-[9px] text-[var(--devlens-accent)]">
+                        <Check size={10} />
+                        Applied to DevLens
+                      </span>
+                    </div>
+                    <div className="px-4 py-4">
+                      <p
+                        data-testid="appearance-font-preview-interface"
+                        className="text-[22px] leading-tight text-ink-100"
+                        style={{ fontFamily: selectedUiFont.family }}
                       >
-                        <span
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-ink-950"
-                          style={{ color: icon.accent }}
+                        Build sharp. Inspect everything.
+                      </p>
+                      <p
+                        className="mt-2 text-[10px] leading-5 text-ink-400"
+                        style={{ fontFamily: selectedUiFont.family }}
+                      >
+                        The quick brown fox jumps over the lazy dog. 0123456789
+                      </p>
+                      <pre
+                        data-testid="appearance-font-preview-code"
+                        className="mt-3 overflow-x-auto rounded border border-[var(--devlens-hairline)] bg-ink-950/70 px-3 py-2 text-[11px] leading-5 text-ink-200"
+                        style={{ fontFamily: selectedCodeFont.family }}
+                      >
+                        {'const lens = { mode: "dev", ready: true }\n> inspect(viewport)'}
+                      </pre>
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] text-ink-200">Interface font</p>
+                      <p className="mt-0.5 text-[10px] text-ink-500">Menus, tabs, settings and dialogs</p>
+                    </div>
+                    <span className="shrink-0 text-[9px] text-ink-600">
+                      {selectedUiFont.label}
+                    </span>
+                  </div>
+                  <div
+                    role="radiogroup"
+                    aria-label="Interface font"
+                    data-testid="appearance-ui-font"
+                    className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3"
+                  >
+                    {INTERFACE_FONTS.map((font) => {
+                      const selected = appearance.uiFont === font.id
+                      return (
+                        <button
+                          key={font.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          data-testid={`appearance-ui-font-${font.id}`}
+                          onClick={() => onAppearance({ uiFont: font.id as UiFontId })}
+                          className={[
+                            'relative flex min-w-0 flex-col items-start rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--devlens-accent)]',
+                            selected
+                              ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
+                              : 'border-[var(--devlens-hairline)] hover:border-white/20 hover:bg-white/[0.03]'
+                          ].join(' ')}
                         >
-                          <DevLensMark size={22} />
-                        </span>
-                        <span className="w-full truncate text-center text-[9px] text-ink-300">
-                          {icon.label}
-                        </span>
-                      </button>
-                    )
-                  })}
+                          <span className="text-[19px] leading-none text-ink-100" style={{ fontFamily: font.family }}>
+                            Aa
+                          </span>
+                          <span
+                            data-testid={`appearance-ui-font-label-${font.id}`}
+                            className="mt-2 w-full truncate text-[10px] text-ink-200"
+                          >
+                            {font.label}
+                          </span>
+                          <span className="mt-0.5 w-full truncate text-[9px] text-ink-500">{font.detail}</span>
+                          {selected && (
+                            <Check size={11} className="absolute right-2.5 top-2.5 text-[var(--devlens-accent)]" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="my-4 h-px bg-[var(--devlens-hairline)]" />
+
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] text-ink-200">Code font</p>
+                      <p className="mt-0.5 text-[10px] text-ink-500">Developer tools, logs and monospace details</p>
+                    </div>
+                    <span className="shrink-0 text-[9px] text-ink-600">
+                      {selectedCodeFont.label}
+                    </span>
+                  </div>
+                  <div
+                    role="radiogroup"
+                    aria-label="Code font"
+                    data-testid="appearance-code-font"
+                    className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3"
+                  >
+                    {CODE_FONTS.map((font) => {
+                      const selected = appearance.codeFont === font.id
+                      return (
+                        <button
+                          key={font.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          data-testid={`appearance-code-font-${font.id}`}
+                          onClick={() => onAppearance({ codeFont: font.id as CodeFontId })}
+                          className={[
+                            'relative flex min-w-0 flex-col items-start rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--devlens-accent)]',
+                            selected
+                              ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
+                              : 'border-[var(--devlens-hairline)] hover:border-white/20 hover:bg-white/[0.03]'
+                          ].join(' ')}
+                        >
+                          <span className="text-[12px] leading-none text-ink-100" style={{ fontFamily: font.family }}>
+                            const lens = 42
+                          </span>
+                          <span
+                            data-testid={`appearance-code-font-label-${font.id}`}
+                            className="mt-2 w-full truncate text-[10px] text-ink-200"
+                          >
+                            {font.label}
+                          </span>
+                          <span className="mt-0.5 w-full truncate text-[9px] text-ink-500">{font.detail}</span>
+                          {selected && (
+                            <Check size={11} className="absolute right-2.5 top-2.5 text-[var(--devlens-accent)]" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </SettingsCard>
 
@@ -1517,6 +1711,70 @@ export function SettingsPage({
           {category === 'developer' && (
             <div className="flex flex-col gap-4">
               <SettingsCard
+                title="Open source in"
+                detail="Detected from the editors registered on this computer."
+              >
+                <div className="flex items-center justify-between gap-4 rounded-md border border-[var(--devlens-hairline)] px-3 py-2.5">
+                  <div>
+                    <p className="text-[11px] text-ink-200">Enable editor hand-off</p>
+                    <p className="mt-0.5 text-[10px] text-ink-500">
+                      Show Open in editor on the toolbar and allow click-to-source.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={developer.ideEnabled}
+                    testId="developer-ide-enabled"
+                    onChange={(checked) => onDeveloperChange({ ideEnabled: checked })}
+                  />
+                </div>
+                <div
+                  aria-disabled={!developer.ideEnabled}
+                  className={[
+                    'mt-3 flex flex-col gap-2 transition-opacity sm:flex-row sm:items-center',
+                    developer.ideEnabled ? 'opacity-100' : 'opacity-40'
+                  ].join(' ')}
+                >
+                  <select
+                    data-testid="developer-ide-select"
+                    aria-label="Editor for opening source files"
+                    value={developer.ideId}
+                    disabled={!developer.ideEnabled}
+                    onChange={(event) =>
+                      onDeveloperChange({ ideId: event.target.value as DeveloperPreferences['ideId'] })
+                    }
+                    className="h-9 min-w-0 flex-1 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[11px] text-ink-200 outline-none disabled:cursor-not-allowed disabled:text-ink-500 focus:border-[var(--devlens-accent-line)]"
+                  >
+                    {ideOptions
+                      .filter((option) => option.installed)
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    {!ideOptions.some(
+                        (option) => option.id === developer.ideId && option.installed
+                      ) && (
+                        <option value={developer.ideId}>
+                          {ideOptions.find((option) => option.id === developer.ideId)?.label ??
+                            developer.ideId}{' '}
+                          (not detected)
+                        </option>
+                      )}
+                  </select>
+                  <span className="shrink-0 rounded-md border border-[var(--devlens-hairline)] px-2.5 py-1.5 font-mono text-[9px] text-ink-500">
+                    {ideOptions.filter((option) => option.installed).length} editor
+                    {ideOptions.filter((option) => option.installed).length === 1 ? '' : 's'} found
+                  </span>
+                </div>
+                <p className="mt-2 text-[10px] leading-4 text-ink-500">
+                  {!developer.ideEnabled
+                    ? 'Editor hand-off is off. The toolbar action is hidden and this selection is disabled.'
+                    : ideOptions.find((option) => option.id === developer.ideId)?.detail ??
+                      'This editor was selected previously but is not currently registered.'}
+                </p>
+              </SettingsCard>
+
+              <SettingsCard
                 title="AI assistant provider"
                 detail="Which site the assistant panel opens on, and which brand the dock shows."
               >
@@ -1825,11 +2083,30 @@ export function SettingsPage({
             </div>
           )}
 
+          {category === 'about' && (
+            <AboutSettingsContent
+              aboutInfo={aboutInfo}
+              preferences={aboutPreferences}
+              onAboutChange={onAboutChange}
+              onOpenRoute={onOpenAboutRoute}
+            />
+          )}
+          {category === 'downloads' && (
+            <DownloadsSettingsContent preferences={downloads} onChange={onDownloads} />
+          )}
+
           <p className="mt-5 font-mono text-[9px] text-ink-600">
             Settings are saved to this profile. No setting is synced or uploaded.
           </p>
         </div>
       </div>
+      {iconPickerOpen && (
+        <AppIconPicker
+          value={appearance.appIcon}
+          onChange={(appIcon) => onAppearance({ appIcon })}
+          onClose={() => setIconPickerOpen(false)}
+        />
+      )}
     </div>
   )
 }

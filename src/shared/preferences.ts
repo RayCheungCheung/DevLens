@@ -23,6 +23,9 @@ import {
   type LanguagePreferences
 } from './languages'
 import type { DeviceFoldState } from './config'
+import type { UpdateChannel, UpdateStrategy } from './types'
+import { DEFAULT_DOWNLOAD_PREFERENCES, type DownloadPreferences, type DownloadPreferencesPatch } from './downloads'
+import type { IdeId } from './ide'
 
 /** Where the sidebar toggle sits in the toolbar. */
 export type SidebarTogglePosition = 'start' | 'end'
@@ -73,6 +76,13 @@ export interface BrowserPreferences {
   defaultZoom: number
 }
 
+export interface DeveloperPreferences {
+  /** Switch for the whole editor hand-off; the dropdown stays disabled while off. */
+  ideEnabled: boolean
+  /** Which detected editor receives click-to-source. */
+  ideId: IdeId
+}
+
 /**
  * The mobile emulator's own state.
  *
@@ -117,6 +127,21 @@ export interface ProfilePreferences {
   languages: LanguagePreferences
   /** Home, startup, tab-opening and default-zoom choices. */
   browser: BrowserPreferences
+  /**
+   * Update distribution channel and strategy shown by `devlens:settings/about`.
+   *
+   * Each profile remembers its own choices. Applying updates requires a configured distribution
+   * service; the source build only stores these preferences.
+   */
+  about: AboutPreferences
+  downloads: DownloadPreferences
+  developer: DeveloperPreferences
+}
+
+/** About controls send only the changed field, so rapid edits cannot overwrite each other. */
+export type ProfilePreferencesPatch = Omit<Partial<ProfilePreferences>, 'about' | 'downloads'> & {
+  about?: Partial<AboutPreferences>
+  downloads?: DownloadPreferencesPatch
 }
 
 export const DEFAULT_MOBILE_SETTINGS: MobileSettings = {
@@ -139,6 +164,31 @@ export const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
   defaultZoom: 100
 }
 
+export const DEFAULT_DEVELOPER_PREFERENCES: DeveloperPreferences = {
+  ideEnabled: true,
+  ideId: 'vscode'
+}
+
+/**
+ * The About page's own choices.
+ *
+ * The version, Electron/Node/Chromium numbers and OS info are read-only system facts; only the
+ * operator's update channel and strategy are preferences, so that is all this stores.
+ */
+export interface AboutPreferences {
+  /** Which distribution channel DevLens pulls updates from. */
+  updateChannel: UpdateChannel
+  /** How the operator wants updates applied. */
+  updateStrategy: UpdateStrategy
+}
+
+export const DEFAULT_ABOUT_PREFERENCES: AboutPreferences = {
+  /* The channel a careful operator starts on. */
+  updateChannel: 'stable',
+  /* Automatic download and apply is the comfortable default. */
+  updateStrategy: 'auto'
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   aiProvider: DEFAULT_AI_SITE,
   omnibox: DEFAULT_OMNIBOX_SETTINGS,
@@ -149,5 +199,8 @@ export const DEFAULT_PREFERENCES: ProfilePreferences = {
   appearance: DEFAULT_APPEARANCE_PREFERENCES,
   tabs: DEFAULT_TABS_PREFERENCES,
   languages: DEFAULT_LANGUAGE_PREFERENCES,
-  browser: DEFAULT_BROWSER_PREFERENCES
+  browser: DEFAULT_BROWSER_PREFERENCES,
+  about: DEFAULT_ABOUT_PREFERENCES,
+  downloads: DEFAULT_DOWNLOAD_PREFERENCES,
+  developer: DEFAULT_DEVELOPER_PREFERENCES
 }

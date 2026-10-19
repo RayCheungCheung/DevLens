@@ -7,6 +7,8 @@
  */
 
 export type LaunchTarget = 'launchpad' | 'blank' | 'custom'
+export type StartupTabMode = 'none' | 'pinned' | 'all'
+import type { WallpaperPresetId } from './wallpapers'
 
 export interface LaunchpadWidgets {
   clock: boolean
@@ -26,6 +28,7 @@ export interface LaunchpadActivity {
 export interface LaunchpadSessionTab {
   url: string
   title: string
+  pinned?: boolean
 }
 
 export interface LaunchpadSession {
@@ -39,10 +42,14 @@ export interface LaunchpadPreferences {
   homeTarget: LaunchTarget
   customUrl: string
   launchAtLogin: boolean
-  restoreLastTabs: boolean
+  startupTabs: StartupTabMode
+  /** Refresh default-browser status whenever the DevLens window gains focus. */
+  checkDefaultBrowser: boolean
   widgets: LaunchpadWidgets
   activity: LaunchpadActivity
-  /** A data URL chosen from disk, or empty for the theme surface. */
+  /** Built-in wallpaper id, custom image, or the plain theme surface. */
+  wallpaperPreset: WallpaperPresetId
+  /** A data URL chosen from disk; used only when `wallpaperPreset` is custom. */
   wallpaper: string
   wallpaperDim: number
   weatherPlace: string
@@ -70,7 +77,8 @@ export const DEFAULT_LAUNCHPAD_PREFERENCES: LaunchpadPreferences = {
   homeTarget: 'launchpad',
   customUrl: 'https://duckduckgo.com/',
   launchAtLogin: false,
-  restoreLastTabs: false,
+  startupTabs: 'none',
+  checkDefaultBrowser: true,
   widgets: {
     clock: true,
     devSpotlight: true,
@@ -84,6 +92,7 @@ export const DEFAULT_LAUNCHPAD_PREFERENCES: LaunchpadPreferences = {
     bookmarks: true,
     downloads: true
   },
+  wallpaperPreset: 'lensy',
   wallpaper: '',
   wallpaperDim: 36,
   weatherPlace: 'Macau',
