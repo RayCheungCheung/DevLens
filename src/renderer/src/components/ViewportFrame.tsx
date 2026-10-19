@@ -11,7 +11,7 @@ import {
 import { Maximize2, Minimize2, RefreshCw } from 'lucide-react'
 import { IPC } from '@shared/ipc'
 import type { ScrollSyncMessage, ViewportId, ViewportPhase } from '@shared/types'
-import type { FindResult } from '@shared/types'
+import type { FindInPageResult, FindResult } from '@shared/types'
 import type { PageContextMenuPayload } from '@shared/types'
 import type {
   DevLensWebviewElement,
@@ -44,6 +44,9 @@ export interface ViewportHandle {
   setDesignMode: (enabled: boolean) => void
   /** `& <selector>`: highlight matches in this guest, or clear with an empty selector. */
   find: (selector: string) => void
+  /** The built-in Find Bar's text search in this guest. */
+  findText: (query: string, options?: { forward?: boolean; findNext?: boolean }) => void
+  clearFindText: () => void
   /** Silence this guest, or let it speak again. */
   setAudioMuted: (muted: boolean) => void
   /** This guest's `webContents` id, for commands main has to run *in* the page. */
@@ -112,6 +115,10 @@ interface ViewportFrameProps {
   onMeasured?: (viewId: ViewportId, size: { width: number; height: number }) => void
   /** Result of a `& <selector>` finder run inside this guest. */
   onFindResult?: (result: FindResult) => void
+  /** One update from Chromium's native finder in this guest. */
+  onPageFindResult?: (result: FindInPageResult) => void
+  /** Ctrl/Cmd + wheel forwarded from the guest, so the shell can zoom that exact page. */
+  onZoomWheel?: (guestId: number, deltaY: number) => void
   /**
    * A right-click inside this guest, with the inspection the page's bridge already did.
    *
@@ -165,6 +172,8 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
     onGuestAttached,
     onMeasured,
     onFindResult,
+    onPageFindResult,
+    onZoomWheel,
     onContextMenu,
     overrideCss = '',
     overrideDesignMode = false,
@@ -247,6 +256,8 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
     onGuestAttached,
     onMeasured,
     onFindResult,
+    onPageFindResult,
+    onZoomWheel,
     onContextMenu
   })
   useLayoutEffect(() => {
@@ -256,6 +267,8 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
       onGuestAttached,
       onMeasured,
       onFindResult,
+      onPageFindResult,
+      onZoomWheel,
       onContextMenu
     }
   })
@@ -341,6 +354,17 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
           clear: selector.trim().length === 0
         })
       },
+      findText: (query: string, options?: { forward?: boolean; findNext?: boolean }) => {
+        sendToGuest(IPC.viewportTextFind, {
+          query,
+          forward: options?.forward !== false,
+          findNext: options?.findNext === true,
+          clear: false
+        })
+      },
+      clearFindText: () => {
+        sendToGuest(IPC.viewportTextFind, { query: '', forward: true, findNext: false, clear: true })
+      },
       /** `<webview>` exposes this directly; the guest keeps its state, only the audio stops. */
       setAudioMuted: (muted: boolean) => {
         try {
@@ -424,6 +448,29 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
         const [result] = detail.args as [FindResult]
         // The guest cannot know which frame it belongs to; the frame does.
         if (result) callbacks.current.onFindResult?.({ ...result, viewId })
+        return
+      }
+      if (detail.channel === IPC.viewportTextFindResult) {
+        const [result] = detail.args as [
+          { activeMatchOrdinal?: number; matches?: number; finalUpdate?: boolean }
+        ]
+        const guestId = webviewRef.current?.getWebContentsId()
+        if (guestId && result) {
+          callbacks.current.onPageFindResult?.({
+            webContentsId: guestId,
+            activeMatchOrdinal: Number(result.activeMatchOrdinal) || 0,
+            matches: Number(result.matches) || 0,
+            finalUpdate: result.finalUpdate !== false
+          })
+        }
+        return
+      }
+      if (detail.channel === IPC.viewportZoomWheelResult) {
+        const [payload] = detail.args as [{ deltaY?: number }]
+        const guestId = webviewRef.current?.getWebContentsId()
+        if (guestId && typeof payload?.deltaY === 'number') {
+          callbacks.current.onZoomWheel?.(guestId, payload.deltaY)
+        }
         return
       }
       if (detail.channel === IPC.viewportContextMenu) {

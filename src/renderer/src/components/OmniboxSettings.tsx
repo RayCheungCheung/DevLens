@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import {
   Check,
   ChevronDown,
-  Compass,
   GripVertical,
   Link2,
   ListFilter,
@@ -23,7 +22,7 @@ import {
 import { FaviconMark, MARK_BOX, PrefixMark } from '@renderer/components/PrefixIcons'
 import { AddEngineModal } from '@renderer/components/AddEngineModal'
 
-interface OmniboxSettingsPageProps {
+interface OmniboxSettingsContentProps {
   settings: OmniboxSettings
   onChange: (next: OmniboxSettings) => void
   favicons: Record<string, string | null>
@@ -186,8 +185,12 @@ function EntryRow({
   )
 }
 
-/** Full-page control centre for the two independent prefix families. */
-export function OmniboxSettingsPage({ settings, onChange, favicons }: OmniboxSettingsPageProps) {
+/** The Omnibox category's embedded control centre for the two prefix families. */
+export function OmniboxSettingsContent({
+  settings,
+  onChange,
+  favicons
+}: OmniboxSettingsContentProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [draggingIndex, setDraggingIndex] = useState(-1)
   const [dragOverIndex, setDragOverIndex] = useState(-1)
@@ -264,26 +267,16 @@ export function OmniboxSettingsPage({ settings, onChange, favicons }: OmniboxSet
   )
 
   return (
-    <div data-testid="omnibox-settings" className="nova-ntp flex min-h-full w-full flex-col gap-7 px-7 py-9">
-      <header className="flex flex-col gap-1">
-        <h1
-          data-testid="omnibox-settings-title"
-          className="flex items-center gap-2 text-[22px] font-semibold text-ink-100"
-        >
-          <Compass size={18} className="text-[var(--devlens-accent)]" />
-          Omnibox &amp; Engines
-        </h1>
-        <p data-testid="omnibox-settings-subtitle" className="text-[13px] text-ink-300">
-          Search with <span className="font-mono">@</span>, jump directly with{' '}
-          <span className="font-mono">#</span>. Both lists use the order shown here.
-        </p>
-        <p className="font-mono text-[11px] text-ink-400">devlens:settings/omnibox</p>
-      </header>
+    <div data-testid="omnibox-settings" className="flex w-full flex-col gap-4">
+      <p className="text-[11px] leading-5 text-ink-400">
+        Search with <span className="font-mono text-ink-200">@</span>, jump directly with{' '}
+        <span className="font-mono text-ink-200">#</span>. Both lists use the order shown here.
+      </p>
 
       <section
         data-testid="settings-section-default"
         data-section="default"
-        className="rounded-xl border border-[var(--devlens-hairline)] bg-white/[0.02] p-5"
+        className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018] p-4"
       >
         <h2 className="flex items-center gap-2 text-[14px] text-ink-100">
           <Search size={13} className="text-[var(--devlens-accent)]" />
@@ -379,7 +372,7 @@ export function OmniboxSettingsPage({ settings, onChange, favicons }: OmniboxSet
       <section
         data-testid="settings-section-engines"
         data-section="engines"
-        className="rounded-xl border border-[var(--devlens-hairline)] bg-white/[0.02] p-5"
+        className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018] p-4"
       >
         <h2 className="flex items-center gap-2 text-[14px] text-ink-100">
           <Search size={13} className="text-[var(--devlens-accent)]" />
@@ -428,7 +421,7 @@ export function OmniboxSettingsPage({ settings, onChange, favicons }: OmniboxSet
       <section
         data-testid="settings-section-shortcuts"
         data-section="shortcuts"
-        className="rounded-xl border border-[var(--devlens-hairline)] bg-white/[0.02] p-5"
+        className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018] p-4"
       >
         <h2 className="flex items-center gap-2 text-[14px] text-ink-100">
           <Link2 size={13} className="text-[var(--devlens-accent)]" />
@@ -475,7 +468,7 @@ export function OmniboxSettingsPage({ settings, onChange, favicons }: OmniboxSet
       <section
         data-testid="settings-section-suggestions"
         data-section="suggestions"
-        className="rounded-xl border border-[var(--devlens-hairline)] bg-white/[0.02] p-5"
+        className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018] p-4"
       >
         <h2 className="flex items-center gap-2 text-[14px] text-ink-100">
           <ListFilter size={13} className="text-[var(--devlens-accent)]" />

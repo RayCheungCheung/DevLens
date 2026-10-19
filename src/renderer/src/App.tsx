@@ -19,13 +19,40 @@ import {
 import { protectionPolicy, type ProtectionLevel } from '@shared/protection'
 import type { AiSiteId } from '@shared/ai-sites'
 import {
+  DEFAULT_BROWSER_PREFERENCES,
   DEFAULT_PREFERENCES,
   DEFAULT_TOOLBAR_LAYOUT,
+  type BrowserPreferences,
   type ProfilePreferences,
   type SidebarTogglePosition,
   type ToolbarLayout,
   type ToolbarTools
 } from '@shared/preferences'
+import {
+  DEFAULT_LAUNCHPAD_PREFERENCES,
+  launchTargetUrl,
+  type LaunchpadPreferences,
+  type LaunchpadSession,
+  type LaunchpadSystemState
+} from '@shared/launchpad'
+import {
+  DEFAULT_PRIVACY_PREFERENCES,
+  type PrivacyPreferences,
+  type ProfileDiskUsage
+} from '@shared/privacy'
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  type AppearancePreferences,
+  type UiDensity
+} from '@shared/appearance'
+import {
+  DEFAULT_TABS_PREFERENCES,
+  type TabsPreferences
+} from '@shared/tabs'
+import {
+  DEFAULT_LANGUAGE_PREFERENCES,
+  type LanguagePreferences
+} from '@shared/languages'
 import {
   capabilitiesFor,
   isDefenseShortcut,
@@ -45,6 +72,7 @@ import type {
   BookmarkSnapshot,
   BookmarkTree,
   BrowserProfile,
+  FindInPageResult,
   ProfileAvatar,
   FindResult,
   GhostSessionState,
@@ -65,10 +93,12 @@ import { TabStrip, type PageTab } from '@renderer/components/TabStrip'
 import { Sidebar, type SidebarPanel } from '@renderer/components/Sidebar'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { NewTabDashboard } from '@renderer/components/NewTabDashboard'
-import { OmniboxSettingsPage } from '@renderer/components/OmniboxSettings'
 import { HistoryPage } from '@renderer/components/HistoryPage'
 import { BookmarksPage } from '@renderer/components/BookmarksPage'
+import { FindBar } from '@renderer/components/FindBar'
 import { SettingsPage } from '@renderer/components/SettingsPage'
+import { ThemeManagerPage } from '@renderer/components/ThemeManagerPage'
+import { VerticalTabs } from '@renderer/components/VerticalTabs'
 import { PageContextMenu } from '@renderer/components/PageContextMenu'
 import { DeviceSelector, FoldToggle, resolveDevice } from '@renderer/components/DeviceSelector'
 import { deviceViewport } from '@shared/config'
@@ -79,7 +109,10 @@ import {
   internalRouteOf,
   internalRouteScopeOf,
   internalRouteUrl,
-  type InternalRouteId
+  settingsCategoryOf,
+  settingsCategoryUrl,
+  type InternalRouteId,
+  type SettingsCategoryId
 } from '@shared/routes'
 import {
   DEFAULT_OMNIBOX_SETTINGS,
@@ -287,6 +320,11 @@ export function App() {
     location: string
   } | null>(null)
   const [omniboxHint, setOmniboxHint] = useState<string | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findFocusSignal, setFindFocusSignal] = useState(0)
+  const [findTargetId, setFindTargetId] = useState<number | null>(null)
+  const [findResult, setFindResult] = useState<FindInPageResult | null>(null)
 
   /* Session profile: ghost mode swaps both viewports onto an isolated partition. */
   const [ghost, setGhost] = useState<GhostSessionState>({
@@ -485,6 +523,11 @@ export function App() {
     }
   }, [tabs, statuses])
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
+  const tabMru = useRef<string[]>([])
+  useEffect(() => {
+    if (!activeTabId) return
+    tabMru.current = [activeTabId, ...tabMru.current.filter((id) => id !== activeTabId)].slice(0, 50)
+  }, [activeTabId])
   /** The active tab's icon, but only while it still belongs to the page on screen. */
   const activeSiteIcon =
     activeTab && tabIcons[activeTab.id]?.host === activeTab.host
@@ -495,10 +538,12 @@ export function App() {
    * The shell's own pages.
    *
    * `devlens:` URLs are answered here rather than loaded: a tab carrying one has no viewport at
-   * all, which is what makes `devlens:settings/omnibox` a page instead of a request to a host
+   * all, which is what makes `devlens:settings/search` a page instead of a request to a host
    * called "devlens". The dashboard keeps its own rule - an *empty* tab is a new tab page.
    */
   const activeInternal = internalRouteOf(startUrl)
+  /** The settings section is carried by the tab URL, not by component-local navigation state. */
+  const activeSettingsCategory = settingsCategoryOf(startUrl)
   const dashboardVisible = Boolean(activeTab) && (!startUrl || activeInternal === 'newtab')
   /**
    * DevLens's own pages are an application surface, not a target to emulate. The empty front
@@ -576,12 +621,64 @@ export function App() {
    * choice with it.
    */
   const [preferences, setPreferences] = useState<ProfilePreferences>(DEFAULT_PREFERENCES)
+  const browserPreferences: BrowserPreferences =
+    preferences.browser ?? DEFAULT_BROWSER_PREFERENCES
+  const launchpadPreferences: LaunchpadPreferences =
+    preferences.launchpad ?? DEFAULT_LAUNCHPAD_PREFERENCES
+  const privacyPreferences: PrivacyPreferences =
+    preferences.privacy ?? DEFAULT_PRIVACY_PREFERENCES
+  const appearancePreferences: AppearancePreferences =
+    preferences.appearance ?? DEFAULT_APPEARANCE_PREFERENCES
+  const tabsPreferences: TabsPreferences =
+    preferences.tabs ?? DEFAULT_TABS_PREFERENCES
+  const languagePreferences: LanguagePreferences =
+    preferences.languages ?? DEFAULT_LANGUAGE_PREFERENCES
+  const browserPreferencesRef = useRef(browserPreferences)
+  const launchpadPreferencesRef = useRef(launchpadPreferences)
+  const privacyPreferencesRef = useRef(privacyPreferences)
+  const appearancePreferencesRef = useRef(appearancePreferences)
+  const tabsPreferencesRef = useRef(tabsPreferences)
+  const languagePreferencesRef = useRef(languagePreferences)
+  useLayoutEffect(() => {
+    browserPreferencesRef.current = browserPreferences
+    launchpadPreferencesRef.current = launchpadPreferences
+    privacyPreferencesRef.current = privacyPreferences
+    appearancePreferencesRef.current = appearancePreferences
+    tabsPreferencesRef.current = tabsPreferences
+    languagePreferencesRef.current = languagePreferences
+  })
+  /** Avoid replacing a restored session with the empty startup tab during bootstrap. */
+  const sessionSaveReady = useRef(false)
+  const [systemIntegration, setSystemIntegration] = useState<LaunchpadSystemState>({
+    isDefaultBrowser: false,
+    launchAtLogin: false
+  })
+  const [systemIntegrationBusy, setSystemIntegrationBusy] = useState(false)
+  const [diskUsage, setDiskUsage] = useState<ProfileDiskUsage>({ bytes: 0, files: 0 })
+  const [screenWidth, setScreenWidth] = useState(() => window.innerWidth)
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+  const effectiveDensity: UiDensity =
+    appearancePreferences.density === 'automatic'
+      ? screenWidth < 980
+        ? 'touch'
+        : screenWidth < 1420
+          ? 'compact'
+          : 'standard'
+      : appearancePreferences.density
+  const resolvedContentTheme =
+    appearancePreferences.contentTheme === 'system'
+      ? systemDark
+        ? 'dark'
+        : 'light'
+      : appearancePreferences.contentTheme
 
   /**
    * The omnibox configuration, and the site icons the operator's own rows are drawn with.
    *
    * Main owns both the settings file and the favicon fetch, so this is a mirror plus a writer:
-   * `devlens:settings/omnibox` edits it, the field reads it, and a save round-trips through main
+   * `devlens:settings/search` edits it, the field reads it, and a save round-trips through main
    * so the file is the one that decides what came back.
    */
   const omniboxSettings: OmniboxSettings = preferences.omnibox ?? DEFAULT_OMNIBOX_SETTINGS
@@ -651,6 +748,128 @@ export function App() {
     },
     [toolbarLayout]
   )
+
+  /** Browser-wide choices are a partial patch over the profile's current values. */
+  const saveBrowserPreferences = useCallback(
+    (patch: Partial<BrowserPreferences>) => {
+      void window.devlens
+        .preferencesSet({ browser: { ...browserPreferences, ...patch } })
+        .then(setPreferences)
+        .catch(() => undefined)
+    },
+    [browserPreferences]
+  )
+
+  const saveLaunchpadPreferences = useCallback(
+    (patch: Partial<LaunchpadPreferences>) => {
+      void window.devlens
+        .preferencesSet({
+          launchpad: {
+            ...launchpadPreferences,
+            ...patch,
+            widgets: { ...launchpadPreferences.widgets, ...patch.widgets },
+            activity: { ...launchpadPreferences.activity, ...patch.activity }
+          }
+        })
+        .then(setPreferences)
+        .catch(() => undefined)
+    },
+    [launchpadPreferences]
+  )
+
+  const setLaunchAtLogin = useCallback(
+    (enabled: boolean): void => {
+      setSystemIntegrationBusy(true)
+      void window.devlens
+        .launchpadSetLaunchAtLogin(enabled)
+        .then((state) => {
+          setSystemIntegration(state)
+          saveLaunchpadPreferences({ launchAtLogin: state.launchAtLogin })
+        })
+        .finally(() => setSystemIntegrationBusy(false))
+    },
+    [saveLaunchpadPreferences]
+  )
+
+  const setDefaultBrowser = useCallback((): void => {
+    setSystemIntegrationBusy(true)
+    void window.devlens
+      .launchpadSetDefaultBrowser()
+      .then(setSystemIntegration)
+      .finally(() => setSystemIntegrationBusy(false))
+  }, [])
+
+  const chooseLaunchpadWallpaper = useCallback((): void => {
+    void window.devlens.launchpadPickWallpaper().then((result) => {
+      if (result.ok && result.dataUrl) saveLaunchpadPreferences({ wallpaper: result.dataUrl })
+    })
+  }, [saveLaunchpadPreferences])
+
+  const savePrivacyPreferences = useCallback(
+    (patch: Partial<PrivacyPreferences>) => {
+      void window.devlens
+        .preferencesSet({ privacy: { ...privacyPreferences, ...patch } })
+        .then(setPreferences)
+        .catch(() => undefined)
+    },
+    [privacyPreferences]
+  )
+
+  const saveAppearancePreferences = useCallback(
+    (patch: Partial<AppearancePreferences>) => {
+      const next = { ...appearancePreferences, ...patch }
+      void window.devlens
+        .preferencesSet({ appearance: next })
+        .then(setPreferences)
+        .catch(() => undefined)
+      if (patch.contentTheme) void window.devlens.appearanceApplyTheme(next.contentTheme)
+      if (patch.appIcon) void window.devlens.appearanceSetAppIcon(next.appIcon)
+    },
+    [appearancePreferences]
+  )
+
+  const saveTabsPreferences = useCallback(
+    (patch: Partial<TabsPreferences>) => {
+      void window.devlens
+        .preferencesSet({
+          tabs: {
+            ...tabsPreferences,
+            ...patch,
+            containers: patch.containers ?? tabsPreferences.containers,
+            hotkeys: patch.hotkeys ?? tabsPreferences.hotkeys
+          }
+        })
+        .then(setPreferences)
+        .catch(() => undefined)
+    },
+    [tabsPreferences]
+  )
+
+  const saveLanguagePreferences = useCallback(
+    (patch: Partial<LanguagePreferences>) => {
+      const next = { ...languagePreferences, ...patch }
+      void window.devlens
+        .preferencesSet({ languages: next })
+        .then(setPreferences)
+        .catch(() => undefined)
+      void window.devlens.languagesApply({
+        spellCheck: next.spellCheck,
+        spellCheckLanguages: next.spellCheckLanguages
+      })
+    },
+    [languagePreferences]
+  )
+
+  const setSiteException = useCallback(
+    (site: string, allowed: boolean): void => {
+      void window.devlens.protectionSetSiteAllowed(site, allowed).then((state) => {
+        setProtection(state)
+        savePrivacyPreferences({ siteExceptions: state.allowedSites })
+      })
+    },
+    [savePrivacyPreferences]
+  )
+
 
   /* Live design session */
   const [cssDraft, setCssDraft] = useState('')
@@ -750,18 +969,72 @@ export function App() {
       .then(async (payload) => {
         if (cancelled) return
         setBootstrap(payload)
-        setAddress(payload.homeUrl ?? '')
-        standardUrl.current = payload.homeUrl ?? ''
-        // A configured start page becomes the first tab; otherwise DevLens opens on the
-        // dashboard with no page mounted at all.
-        openTab(payload.homeUrl)
-        const [recent, savedStore, ghostState] = await Promise.all([
+        const [storedPreferences, recent, savedStore, ghostState] = await Promise.all([
+          window.devlens.preferencesState(),
           window.devlens.historyList(payload.historyLimit),
           window.devlens.bookmarksSnapshot(),
           window.devlens.ghostState()
         ])
         if (cancelled) return
+        setPreferences(storedPreferences)
+        const storedPrivacy = storedPreferences.privacy ?? DEFAULT_PRIVACY_PREFERENCES
+        const storedAppearance =
+          storedPreferences.appearance ?? DEFAULT_APPEARANCE_PREFERENCES
+        const storedLanguages =
+          storedPreferences.languages ?? DEFAULT_LANGUAGE_PREFERENCES
+        void window.devlens.appearanceApplyTheme(storedAppearance.contentTheme)
+        void window.devlens.appearanceSetAppIcon(storedAppearance.appIcon)
+        void window.devlens.languagesApply({
+          spellCheck: storedLanguages.spellCheck,
+          spellCheckLanguages: storedLanguages.spellCheckLanguages
+        })
+        void window.devlens.protectionSetShieldRules({
+          crossSiteTrackers: storedPrivacy.blockCrossSiteTrackers,
+          fingerprinters: storedPrivacy.blockFingerprinters,
+          cryptominers: storedPrivacy.blockCryptominers,
+          sendDnt: storedPrivacy.sendDnt
+        })
+        void window.devlens.privacyApplyNetwork({ dnsMode: storedPrivacy.dnsMode })
+        void window.devlens.protectionSetLevel(storedPrivacy.shieldMode)
+        for (const site of storedPrivacy.siteExceptions) {
+          void window.devlens.protectionSetSiteAllowed(site, true)
+        }
+        const storedLaunchpad = storedPreferences.launchpad ?? DEFAULT_LAUNCHPAD_PREFERENCES
+        const restored = storedLaunchpad.restoreLastTabs ? storedLaunchpad.session.tabs : []
+        if (restored.length > 0) {
+          const ids = restored.map((tab) =>
+            openTab(tab.url, tab.title, { useNewTabTarget: false })
+          )
+          const active = Math.min(
+            Math.max(0, storedLaunchpad.session.activeIndex),
+            restored.length - 1
+          )
+          setActiveTabId(ids[active])
+          setAddress(restored[active]?.url ?? '')
+          standardUrl.current = restored[active]?.url ?? ''
+        } else {
+          /*
+           * Home target is the launch surface. Launchpad itself is represented by a null URL;
+           * Blank Canvas and Custom URL become the first tab's real address.
+           */
+          const startupUrl = launchTargetUrl(
+            storedLaunchpad.homeTarget,
+            storedLaunchpad.customUrl
+          )
+          setAddress(startupUrl ?? '')
+          standardUrl.current = startupUrl ?? ''
+          openTab(startupUrl, '', { useNewTabTarget: false })
+        }
+        sessionSaveReady.current = true
         setHistory(recent)
+        if (storedPrivacy.historyRetention === 'incognito') {
+          await window.devlens.historyClear()
+          if (!cancelled) setHistory([])
+        } else if (storedPrivacy.historyRetention === 'custom') {
+          await window.devlens.historyPrune(storedPrivacy.retentionDays)
+          const pruned = await window.devlens.historyList(payload.historyLimit)
+          if (!cancelled) setHistory(pruned)
+        }
         applyBookmarkSnapshot(savedStore)
         setGhost(ghostState)
 
@@ -911,6 +1184,14 @@ export function App() {
     [showStatus]
   )
 
+  const setShieldMode = useCallback(
+    (mode: PrivacyPreferences['shieldMode']): void => {
+      savePrivacyPreferences({ shieldMode: mode })
+      void selectProtectionLevel(mode)
+    },
+    [savePrivacyPreferences, selectProtectionLevel]
+  )
+
   /**
    * Main owns the history, so the renderer pulls it when it matters: focusing the omnibox and
    * after every navigation. Without this, suggestions on an empty field would only ever show
@@ -972,12 +1253,33 @@ export function App() {
   }, [])
 
   useEffect(() => window.devlens.onPreferencesChanged(setPreferences), [])
+  useEffect(() => {
+    void window.devlens.launchpadSystemState().then(setSystemIntegration)
+  }, [])
+  useEffect(() => {
+    void window.devlens.privacyDiskUsage().then(setDiskUsage)
+  }, [profileId])
+  useEffect(() => {
+    const onResize = (): void => setScreenWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (): void => setSystemDark(query.matches)
+    onChange()
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+  useEffect(() => {
+    document.documentElement.lang = languagePreferences.primaryLanguage
+  }, [languagePreferences.primaryLanguage])
 
   /**
    * The omnibox panel's own channel.
    *
    * It carries the same value as the preferences event above, and is subscribed to separately on
-   * purpose: the panel at `devlens:settings/omnibox` is a page in a tab, and a page that only
+   * purpose: Search settings at `devlens:settings/search` is a page in a tab, and a page that only
    * learns about its own settings when some *other* preference changes would be a page that is
    * right by accident.
    */
@@ -1041,16 +1343,25 @@ export function App() {
     (
       url: string | null = null,
       title = '',
-      options?: { afterId?: string; partition?: string }
+      options?: {
+        afterId?: string
+        partition?: string
+        useNewTabTarget?: boolean
+        activate?: boolean
+      }
     ): string => {
     tabSeq.current += 1
     const id = `tab-${tabSeq.current}`
+    const targetUrl =
+      url === null && options?.useNewTabTarget !== false
+        ? launchTargetUrl(launchpadPreferences.newTabTarget, launchpadPreferences.customUrl)
+        : url
     const tab: PageTab = {
       id,
-      url,
-      title: title || hostOf(url),
-      host: hostOf(url),
-      secure: Boolean(url?.startsWith('https://')),
+      url: targetUrl,
+      title: title || hostOf(targetUrl),
+      host: hostOf(targetUrl),
+      secure: Boolean(targetUrl?.startsWith('https://')),
       /* A tab opened *from* a page keeps that page's session; normal tabs leave this unset and
          follow the window. */
       ...(options?.partition ? { partition: options.partition } : {})
@@ -1064,13 +1375,40 @@ export function App() {
       next.splice(index + 1, 0, tab)
       return next
     })
-    setActiveTabId(id)
-    setAddress(url ?? '')
-    setOmniboxHint(null)
+    if (options?.activate !== false) {
+      setActiveTabId(id)
+      setAddress(targetUrl ?? '')
+      setOmniboxHint(null)
+    }
     return id
     },
-    []
+    [launchpadPreferences.customUrl, launchpadPreferences.newTabTarget]
   )
+
+  /**
+   * Persist the restorable strip after the UI settles. Private tabs never enter this list, and a
+   * debounce keeps rapid tab operations from turning the preference store into an event log.
+   */
+  useEffect(() => {
+    if (!sessionSaveReady.current) return
+    const timer = window.setTimeout(() => {
+      const restorable = tabs
+        .filter((tab) => !tab.private && Boolean(tab.url))
+        .map((tab) => ({ url: tab.url ?? '', title: tab.title }))
+      const activeUrl = activeTab?.url ?? ''
+      const activeIndex = Math.max(
+        0,
+        restorable.findIndex((tab) => tab.url === activeUrl)
+      )
+      const session: LaunchpadSession = {
+        tabs: restorable,
+        activeIndex,
+        savedAt: Date.now()
+      }
+      void window.devlens.launchpadSaveSession(session).catch(() => undefined)
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [activeTab?.url, tabs])
 
   /**
    * Opens a tab that runs at maximum protection, on a session of its own.
@@ -1170,8 +1508,11 @@ export function App() {
    * history either - the address is not a place they visited.
    */
   const openInternalTab = useCallback(
-    (route: InternalRouteId): void => {
-      const url = internalRouteUrl(route)
+    (route: InternalRouteId, requestedUrl?: string): void => {
+      const url =
+        route === 'settings'
+          ? settingsCategoryUrl(settingsCategoryOf(requestedUrl ?? internalRouteUrl(route)))
+          : internalRouteUrl(route)
       const title = internalRouteLabel(route)
       const scope = internalRouteScopeOf(url)
       const existing = tabs.find((tab) => internalRouteScopeOf(tab.url) === scope)
@@ -1199,6 +1540,13 @@ export function App() {
       openTab(url, title)
     },
     [openTab, selectTab, tabs]
+  )
+
+  const openSettingsCategory = useCallback(
+    (category: SettingsCategoryId): void => {
+      openInternalTab('settings', settingsCategoryUrl(category))
+    },
+    [openInternalTab]
   )
 
   const closeTab = useCallback(
@@ -1343,6 +1691,8 @@ export function App() {
   const handleGuestAttached = useCallback(
     (viewId: ViewportId, guestId: number, guestPartition: string) => {
       window.devlens.registerGuest({ viewId, guestId, partition: guestPartition })
+      const zoom = browserPreferencesRef.current.defaultZoom
+      if (zoom !== 100) void window.devlens.pageZoomSet(guestId, zoom).catch(() => undefined)
     },
     []
   )
@@ -1447,6 +1797,7 @@ export function App() {
   /** Loads a URL in both viewports and remembers it for history and suggestions. */
   const navigate = useCallback(
     (url: string, title = '') => {
+      url = enforceHttpsOnly(url, privacyPreferencesRef.current.httpsOnly)
       loadInActiveTab(url, title)
       setAddress(url)
       // A private tab is not remembered anywhere: not in this profile's history, not in its
@@ -1455,7 +1806,9 @@ export function App() {
         window.devlens.historyAdd({ url, title, private: true, tabId: activeTab.id })
       } else {
         if (!ghost.active) standardUrl.current = url
-        window.devlens.historyAdd({ url, title })
+        if (privacyPreferencesRef.current.historyRetention !== 'incognito') {
+          window.devlens.historyAdd({ url, title })
+        }
       }
       void refreshHistory()
       setOmniboxHint(null)
@@ -1466,6 +1819,7 @@ export function App() {
   /** Alt+Enter and Alt-click: same flow, but the page lands in its own tab. */
   const openInNewTab = useCallback(
     (url: string, title = ''): void => {
+      url = enforceHttpsOnly(url, privacyPreferencesRef.current.httpsOnly)
       // From a private tab this opens another private tab: staying at Level 3 is what the
       // operator asked for, and the alternative - a plain tab - would be a downgrade.
       if (activeTab?.private) {
@@ -1473,10 +1827,16 @@ export function App() {
         setOmniboxHint(null)
         return
       }
-      openTab(url, title)
-      setAddress(url)
+      const activate = tabsPreferencesRef.current.switchToNewTabs
+      openTab(url, title, { activate })
+      if (activate) setAddress(url)
       if (!ghost.active) standardUrl.current = url
-      window.devlens.historyAdd({ url, title })
+      if (
+        !activeTab?.private &&
+        privacyPreferencesRef.current.historyRetention !== 'incognito'
+      ) {
+        window.devlens.historyAdd({ url, title })
+      }
       void refreshHistory()
       setOmniboxHint(null)
     },
@@ -1500,11 +1860,19 @@ export function App() {
           void openPrivateTab(request.url)
           return
         }
-        openTab(request.url, '', { partition: request.partition })
-        setAddress(request.url)
+        const settings = tabsPreferencesRef.current
+        const activate = settings.switchToNewTabs
+        openTab(request.url, '', {
+          partition: request.partition,
+          activate,
+          ...(settings.externalLinksBesideCurrent && activeTabId
+            ? { afterId: activeTabId }
+            : {})
+        })
+        if (activate) setAddress(request.url)
         window.devlens.historyAdd({ url: request.url, title: '' })
       }),
-    [activeTab?.private, openPrivateTab, openTab]
+    [activeTab?.private, activeTabId, openPrivateTab, openTab]
   )
 
   const reloadBoth = useCallback(() => {
@@ -1538,7 +1906,7 @@ export function App() {
         tabs: tabs.map((tab) => ({ id: tab.id, url: tab.url, title: tab.title })),
         sessionUrls,
         /**
-         * The profile's own engine, not the config file's: `devlens:settings/omnibox` is the
+         * The profile's own engine, not the config file's: `devlens:settings/search` is the
          * place the operator changes it, and the file it writes is per profile.
          */
         defaultEngine,
@@ -1707,7 +2075,9 @@ export function App() {
       const url = activeStatuses[activeView].url
       if (!url || url === 'about:blank') return
       try {
-        setProtection(await window.devlens.protectionSetSiteAllowed(url, exempt))
+        const state = await window.devlens.protectionSetSiteAllowed(url, exempt)
+        setProtection(state)
+        savePrivacyPreferences({ siteExceptions: state.allowedSites })
         showStatus(
           exempt
             ? `protection paused for this site - ${hostOf(url)}`
@@ -1717,7 +2087,7 @@ export function App() {
         showStatus('could not change site protection')
       }
     },
-    [activeStatuses, activeView, showStatus]
+    [activeStatuses, activeView, savePrivacyPreferences, showStatus]
   )
 
   /** Clears cookies and storage for the page on screen, and nothing else. */
@@ -1970,6 +2340,56 @@ export function App() {
     showStatus(result.ok ? `cleared ${result.cleared.join(', ')}` : 'could not clear session data')
   }, [activeTab, ghost.active, partitionForTab, showStatus])
 
+  const clearBrowsingData = useCallback((): void => {
+    void clearSessionData().then(() => {
+      void window.devlens.historyClear().then(() => {
+        setHistory([])
+        void window.devlens.privacyDiskUsage().then(setDiskUsage)
+        showStatus('cookies, cache, site storage and history cleared')
+      })
+    })
+  }, [clearSessionData, showStatus])
+
+  const updateShieldRules = useCallback(
+    (
+      patch: Pick<
+        PrivacyPreferences,
+        'blockCrossSiteTrackers' | 'blockFingerprinters' | 'blockCryptominers' | 'sendDnt'
+      >
+    ): void => {
+      savePrivacyPreferences(patch)
+      void window.devlens.protectionSetShieldRules({
+        crossSiteTrackers: patch.blockCrossSiteTrackers,
+        fingerprinters: patch.blockFingerprinters,
+        cryptominers: patch.blockCryptominers,
+        sendDnt: patch.sendDnt
+      })
+    },
+    [savePrivacyPreferences]
+  )
+
+  const updateNetworkSecurity = useCallback(
+    (patch: Pick<PrivacyPreferences, 'dnsMode' | 'httpsOnly'>): void => {
+      savePrivacyPreferences(patch)
+      void window.devlens.privacyApplyNetwork({ dnsMode: patch.dnsMode })
+    },
+    [savePrivacyPreferences]
+  )
+
+  const updateHistoryRetention = useCallback(
+    (mode: PrivacyPreferences['historyRetention'], days: number): void => {
+      savePrivacyPreferences({ historyRetention: mode, retentionDays: days })
+      if (mode === 'incognito') {
+        void window.devlens.historyClear().then(() => setHistory([]))
+        return
+      }
+      if (mode === 'custom') {
+        void window.devlens.historyPrune(days).then(() => refreshHistory())
+      }
+    },
+    [refreshHistory, savePrivacyPreferences]
+  )
+
   const runFind = useCallback(
     (selector: string) => {
       if (selector.trim()) {
@@ -1984,6 +2404,133 @@ export function App() {
     [activeFrame, activeView, designTarget]
   )
 
+  /** Start or continue Chromium's native finder in the page that owns focus. */
+  const searchInPage = useCallback(
+    (
+      text: string,
+      options?: { forward?: boolean; findNext?: boolean; webContentsId?: number }
+    ): void => {
+      const frame = activeFrame(activeView)
+      const guestId = options?.webContentsId ?? findTargetId ?? frame?.guestId()
+      if (!frame || !guestId) return
+      setFindTargetId(guestId)
+      frame.findText(text, {
+        forward: options?.forward !== false,
+        findNext: options?.findNext === true
+      })
+    },
+    [activeFrame, activeView, findTargetId]
+  )
+
+  /** Open the bar, remember the target page, and focus/select the query again. */
+  const openFindBar = useCallback(
+    (knownGuestId?: number): void => {
+      const frame = activeFrame(activeView)
+      const guestId = knownGuestId ?? frame?.guestId() ?? null
+      setFindTargetId(guestId)
+      setFindOpen(true)
+      setFindFocusSignal((value) => value + 1)
+      if (guestId && frame && findQuery.trim()) {
+        frame.findText(findQuery, { forward: true, findNext: false })
+      }
+    },
+    [activeFrame, activeView, findQuery]
+  )
+
+  const closeFindBar = useCallback((): void => {
+    setFindOpen(false)
+    setFindResult(null)
+    for (const viewId of ['mobile', 'desktop'] as ViewportId[]) {
+      activeFrame(viewId)?.clearFindText()
+    }
+  }, [activeFrame])
+
+  const changeFindQuery = useCallback(
+    (value: string): void => {
+      setFindQuery(value)
+      setFindResult(null)
+      if (!value.trim()) {
+        for (const viewId of ['mobile', 'desktop'] as ViewportId[]) {
+          activeFrame(viewId)?.clearFindText()
+        }
+        return
+      }
+      searchInPage(value)
+    },
+    [activeFrame, searchInPage]
+  )
+
+  const findNextMatch = useCallback(
+    (forward: boolean): void => {
+      if (!findQuery.trim()) return
+      searchInPage(findQuery, { forward, findNext: true })
+    },
+    [findQuery, searchInPage]
+  )
+
+  /** The bar belongs to the page that opened it; changing tabs or leaving the web surface closes it. */
+  useEffect(() => {
+    closeFindBar()
+  }, [activeTabId, closeFindBar, internalSurface])
+
+  /** Native finder updates arrive on the frame's own `<webview>` element. */
+  const handlePageFindResult = useCallback((result: FindInPageResult): void => {
+    setFindResult(result)
+  }, [])
+
+  /** Escape belongs to the Find Bar while it is open, before any child can consume it. */
+  useEffect(() => {
+    if (!findOpen) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closeFindBar()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [closeFindBar, findOpen])
+
+  /** A page-owned Ctrl/Cmd+F is reported by main because the shell never sees that keydown. */
+  useEffect(
+    () =>
+      window.devlens.onFindInPageRequested((request) => openFindBar(request.webContentsId)),
+    [openFindBar]
+  )
+
+  /** The shell's own pages never focus a guest, so their wheel events arrive here. */
+  useEffect(() => {
+    const onWheel = (event: WheelEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || !event.deltaY) return
+      const guestId = activeFrame(activeView)?.guestId()
+      if (!guestId) return
+      event.preventDefault()
+      const step = Math.max(-0.5, Math.min(0.5, -event.deltaY * 0.002))
+      if (step) void window.devlens.pageZoomBy(guestId, step).catch(() => undefined)
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, true)
+  }, [activeFrame, activeView])
+
+  /** Zoom a guest from its own forwarded wheel gesture, keeping each step bounded. */
+  const zoomFromGuestWheel = useCallback((guestId: number, deltaY: number): void => {
+    const step = Math.max(-0.5, Math.min(0.5, -deltaY * 0.002))
+    if (step) void window.devlens.pageZoomBy(guestId, step).catch(() => undefined)
+  }, [])
+
+  /** Apply a changed default only when the preference changes, not on every tab switch. */
+  const appliedDefaultZoom = useRef(browserPreferences.defaultZoom)
+  useEffect(() => {
+    if (appliedDefaultZoom.current === browserPreferences.defaultZoom) return
+    appliedDefaultZoom.current = browserPreferences.defaultZoom
+    const guestId = activeFrame(activeView)?.guestId()
+    if (guestId) {
+      void window.devlens
+        .pageZoomSet(guestId, browserPreferences.defaultZoom)
+        .catch(() => undefined)
+    }
+  }, [activeFrame, activeView, browserPreferences.defaultZoom])
+
   /** Keyboard shortcuts for the dashboard, matching browser muscle memory. */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1992,6 +2539,40 @@ export function App() {
         // A real new tab, not an overlay: whatever is on screen keeps running and keeps its
         // address. The new tab starts on the dashboard until something opens in it.
         openTab(null)
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Tab' && tabs.length > 1) {
+        event.preventDefault()
+        const forward = !event.shiftKey
+        const mruTarget = tabsPreferencesRef.current.mruSwitching
+          ? tabMru.current.find(
+              (id) => id !== activeTabId && tabs.some((tab) => tab.id === id)
+            )
+          : undefined
+        if (mruTarget) {
+          selectTab(mruTarget)
+          return
+        }
+        const index = Math.max(
+          0,
+          tabs.findIndex((tab) => tab.id === activeTabId)
+        )
+        const next =
+          tabs[(index + (forward ? 1 : -1) + tabs.length) % tabs.length]
+        if (next) selectTab(next.id)
+        return
+      }
+
+      /** Ctrl/Cmd+F opens the same find bar in both modes and on every shell page. */
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'f'
+      ) {
+        event.preventDefault()
+        openFindBar()
         return
       }
 
@@ -2070,6 +2651,11 @@ export function App() {
       }
 
       // Escape dismisses the topmost on-demand surface, unless the omnibox owns the key.
+      if (event.key === 'Escape' && findOpen && !addressFocused.current) {
+        event.preventDefault()
+        closeFindBar()
+        return
+      }
       if (event.key === 'Escape' && defenseOpen && !addressFocused.current) {
         event.preventDefault()
         setDefenseOpen(false)
@@ -2082,11 +2668,15 @@ export function App() {
     activeTabId,
     changeMode,
     closeTab,
+    closeFindBar,
     defenseOpen,
+    findOpen,
     mode,
     openDeveloperArea,
+    openFindBar,
     openPrivateTab,
     openTab,
+    selectTab,
     tabs
   ])
 
@@ -2107,7 +2697,7 @@ export function App() {
           else navigate(action.url, action.kind === 'navigate' ? '' : raw.trim())
           return
         case 'internal':
-          openInternalTab(action.route)
+          openInternalTab(action.route, action.url)
           showStatus(action.label)
           return
         case 'ghost': {
@@ -2935,18 +3525,24 @@ export function App() {
         showStatus('Could not save page')
       }
     },
-    onFind: () => runFind(''),
-    onZoomIn: () => {
+    onFind: () => openFindBar(),
+    onZoomIn: async () => {
       const id = activeFrame(activeView)?.guestId()
-      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-in' })
+      if (!id) return 0
+      await window.devlens.pageCommand({ webContentsId: id, command: 'zoom-in' })
+      return window.devlens.pageZoom(id)
     },
-    onZoomOut: () => {
+    onZoomOut: async () => {
       const id = activeFrame(activeView)?.guestId()
-      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-out' })
+      if (!id) return 0
+      await window.devlens.pageCommand({ webContentsId: id, command: 'zoom-out' })
+      return window.devlens.pageZoom(id)
     },
-    onZoomReset: () => {
+    onZoomReset: async () => {
       const id = activeFrame(activeView)?.guestId()
-      if (id) void window.devlens.pageCommand({ webContentsId: id, command: 'zoom-reset' })
+      if (!id) return 0
+      await window.devlens.pageCommand({ webContentsId: id, command: 'zoom-reset' })
+      return window.devlens.pageZoom(id)
     },
     onGetZoomPercent: async () => {
       const id = activeFrame(activeView)?.guestId()
@@ -2965,24 +3561,33 @@ export function App() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-ink-950" data-mode={mode}>
+    <div
+      className="flex h-full flex-col bg-ink-950"
+      data-mode={mode}
+      data-workspace-theme={appearancePreferences.workspaceTheme}
+      data-content-theme={resolvedContentTheme}
+      data-density={effectiveDensity}
+      data-density-preference={appearancePreferences.density}
+    >
       {/* Floating tab strip: the mode tokens are inherited from the root, so the accent
           changes with the mode without the strip knowing about modes at all. */}
-      <TabStrip
-        tabs={tabs}
-        activeId={activeTabId}
-        mode={mode}
-        onSelect={selectTab}
-        onClose={closeTab}
-        onNewTab={() => openTab(null)}
-        onNewPrivateTab={() => void openPrivateTab()}
-        onTabAction={handleTabAction}
-        canReopen={closedTabs.current.length > 0}
-        icons={Object.fromEntries(
-          Object.entries(tabIcons).map(([id, entry]) => [id, entry.dataUrl])
-        )}
-        notifiedTabIds={notifiedTabIds}
-      />
+      {tabsPreferences.layout === 'horizontal' && (
+        <TabStrip
+          tabs={tabs}
+          activeId={activeTabId}
+          mode={mode}
+          onSelect={selectTab}
+          onClose={closeTab}
+          onNewTab={() => openTab(null)}
+          onNewPrivateTab={() => void openPrivateTab()}
+          onTabAction={handleTabAction}
+          canReopen={closedTabs.current.length > 0}
+          icons={Object.fromEntries(
+            Object.entries(tabIcons).map(([id, entry]) => [id, entry.dataUrl])
+          )}
+          notifiedTabIds={notifiedTabIds}
+        />
+      )}
       <Toolbar
         address={address}
         onAddressChange={setAddress}
@@ -3113,7 +3718,7 @@ export function App() {
         page={canBookmark ? { url: activeStatus.url, title: activeStatus.title } : null}
         onOpen={(url, options) => {
           setAddress(url)
-          if (options?.newTab) openInNewTab(url)
+          if (options?.newTab || browserPreferences.openBookmarksInNewTab) openInNewTab(url)
           else navigate(url)
         }}
         onMove={(input) => applyAndSay(window.devlens.bookmarksMoveNode(input), 'bookmarks reordered')}
@@ -3122,6 +3727,21 @@ export function App() {
       />
 
       <div className="flex min-h-0 flex-1">
+        {tabsPreferences.layout === 'vertical' && (
+          <VerticalTabs
+            tabs={tabs}
+            activeId={activeTabId}
+            icons={Object.fromEntries(
+              Object.entries(tabIcons).map(([id, entry]) => [id, entry.dataUrl])
+            )}
+            notifiedTabIds={notifiedTabIds}
+            canReopen={closedTabs.current.length > 0}
+            onSelect={selectTab}
+            onClose={closeTab}
+            onNewTab={() => openTab(null)}
+            onTabAction={handleTabAction}
+          />
+        )}
         {/* The dock, on the left: the everyday four in normal mode, the whole toolset in dev.
             It is always mounted - it is browser chrome, not a developer surface - and the panel
             column beside it only exists while a tool is selected. */}
@@ -3211,7 +3831,7 @@ export function App() {
             onProfileAsk: (ask) => void setAskOnStartup(ask),
             layout: toolbarLayout,
             onLayout: (patch) => void saveToolbarLayout(patch),
-            onOpenOmniboxSettings: () => openInternalTab('omnibox-settings')
+            onOpenOmniboxSettings: () => openSettingsCategory('search')
           }}
           tools={{
             servers,
@@ -3246,7 +3866,18 @@ export function App() {
           }}
         />
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {findOpen && (
+            <FindBar
+              query={findQuery}
+              enabled={Boolean(findTargetId && activeTab?.url && !internalSurface)}
+              focusSignal={findFocusSignal}
+              result={findResult?.webContentsId === findTargetId ? findResult : null}
+              onQueryChange={changeFindQuery}
+              onNext={findNextMatch}
+              onClose={closeFindBar}
+            />
+          )}
           <div
             ref={canvasRef}
             data-testid="viewport-canvas"
@@ -3286,7 +3917,7 @@ export function App() {
             {tabs
               /* Unloaded tabs keep their address but hold no viewports: that is the memory saver
                  the context menu's "Unload Tab" switches on. */
-              /* Neither do the shell's own pages: `devlens:settings/omnibox` is drawn by the
+              /* Neither do the shell's own pages: `devlens:settings/search` is drawn by the
                  content area below, so mounting a viewport for it would be a request to a host
                  that does not exist. */
               .filter((tab) => tab.url && !tab.unloaded && !internalRouteOf(tab.url))
@@ -3327,6 +3958,8 @@ export function App() {
                 onGuestAttached={handleGuestAttached}
                 onMeasured={handleMeasured}
                 onFindResult={handleFindResult}
+                onPageFindResult={handlePageFindResult}
+                onZoomWheel={zoomFromGuestWheel}
                 onContextMenu={(payload) => handleGuestContextMenu(tab.id, 'mobile', payload)}
                 overrideCss={cssApplied}
                 overrideDesignMode={designMode}
@@ -3353,6 +3986,8 @@ export function App() {
                 onGuestAttached={handleGuestAttached}
                 onMeasured={handleMeasured}
                 onFindResult={handleFindResult}
+                onPageFindResult={handlePageFindResult}
+                onZoomWheel={zoomFromGuestWheel}
                 onContextMenu={(payload) => handleGuestContextMenu(tab.id, 'desktop', payload)}
                 overrideCss={cssApplied}
                 overrideDesignMode={designMode}
@@ -3384,6 +4019,7 @@ export function App() {
                 the tab strip, toolbar and status bar stay interactive while it is showing. */}
             {dashboardVisible && (
               <NewTabDashboard
+                launchpad={launchpadPreferences}
                 services={{
                   servers,
                   scanning,
@@ -3450,16 +4086,23 @@ export function App() {
                 onToggleWimh={() => void toggleWimh(!wimh?.active)}
               />
             )}
+            {activeInternal === 'blank' && (
+              <div
+                data-testid="blank-canvas"
+                className="nova-ntp absolute inset-0 z-40"
+                aria-label="Blank canvas"
+              />
+            )}
+            {activeInternal === 'appearance-themes' && (
+              <ThemeManagerPage
+                appearance={appearancePreferences}
+                onTheme={(workspaceTheme) => saveAppearancePreferences({ workspaceTheme })}
+                onBack={() => openSettingsCategory('appearance')}
+              />
+            )}
 
             {/* The shell's own pages, drawn by the content area for the same reason the dashboard
                 is: the tab strip, the toolbar and the status bar stay live around them. */}
-            {activeInternal === 'omnibox-settings' && (
-              <OmniboxSettingsPage
-                settings={omniboxSettings}
-                onChange={saveOmniboxSettings}
-                favicons={customFavicons}
-              />
-            )}
             {activeInternal === 'history' && (
               <HistoryPage
                 entries={history}
@@ -3479,7 +4122,7 @@ export function App() {
               <BookmarksPage
                 bookmarks={bookmarks}
                 onOpen={(url, options) => {
-                  if (options?.newTab) openInNewTab(url)
+                  if (options?.newTab || browserPreferences.openBookmarksInNewTab) openInNewTab(url)
                   else navigate(url)
                 }}
                 onRemove={(url) => void removeBookmarkEntry(url)}
@@ -3487,6 +4130,8 @@ export function App() {
             )}
             {activeInternal === 'settings' && (
               <SettingsPage
+                category={activeSettingsCategory}
+                onCategoryChange={openSettingsCategory}
                 aiProvider={preferences.aiProvider}
                 onProviderChange={(provider) => {
                   // The profile owns the choice, so it is written where a restart can find it.
@@ -3495,12 +4140,44 @@ export function App() {
                     .then(setPreferences)
                     .catch(() => showStatus('could not save that preference'))
                 }}
+                omnibox={omniboxSettings}
+                onOmnibox={saveOmniboxSettings}
+                omniboxFavicons={customFavicons}
+                browser={browserPreferences}
+                onBrowser={saveBrowserPreferences}
+                launchpad={launchpadPreferences}
+                onLaunchpad={saveLaunchpadPreferences}
+                systemIntegration={systemIntegration}
+                systemIntegrationBusy={systemIntegrationBusy}
+                onSetDefaultBrowser={setDefaultBrowser}
+                onLaunchAtLogin={setLaunchAtLogin}
+                onChooseWallpaper={chooseLaunchpadWallpaper}
                 toolbarLayout={toolbarLayout}
                 onLayout={(patch) => void saveToolbarLayout(patch)}
+                bookmarkOptions={bookmarkOptions}
+                onBookmarkOptions={(patch) =>
+                  applyAndSay(window.devlens.bookmarksSetOptions(patch), 'bookmark settings saved')
+                }
+                protection={protection}
+                privacy={privacyPreferences}
+                diskUsage={diskUsage}
+                onShieldMode={setShieldMode}
+                onShieldRules={updateShieldRules}
+                onNetworkSecurity={updateNetworkSecurity}
+                onHistoryRetention={updateHistoryRetention}
+                onClearBrowsingData={clearBrowsingData}
+                onSiteException={setSiteException}
+                onPrivacy={savePrivacyPreferences}
+                appearance={appearancePreferences}
+                onAppearance={saveAppearancePreferences}
+                onOpenThemes={() => openInternalTab('appearance-themes')}
+                tabsPreferences={tabsPreferences}
+                onTabs={saveTabsPreferences}
+                languages={languagePreferences}
+                onLanguages={saveLanguagePreferences}
                 profileAsk={profileAsk}
                 onProfileAsk={(ask) => void setAskOnStartup(ask)}
                 profileName={profiles.find((profile) => profile.active)?.name ?? 'Default'}
-                onOpenOmnibox={() => openInternalTab('omnibox-settings')}
               />
             )}
 
@@ -3600,4 +4277,23 @@ async function openSource(
 ): Promise<void> {
   const result = await window.devlens.openInIde({ sourceUrl, line })
   showStatus(result.ok ? `${result.resolvedPath ?? ''}:${line}` : result.error ?? 'source not mapped')
+}
+
+/** HTTPS-only upgrades ordinary web navigations while leaving localhost development alone. */
+function enforceHttpsOnly(url: string, enabled: boolean): string {
+  if (!enabled || !/^http:\/\//i.test(url)) return url
+  try {
+    const parsed = new URL(url)
+    if (
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === '::1'
+    ) {
+      return url
+    }
+    parsed.protocol = 'https:'
+    return parsed.toString()
+  } catch {
+    return url
+  }
 }

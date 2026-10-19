@@ -8,6 +8,20 @@
 
 import { DEFAULT_AI_SITE, type AiSiteId } from './ai-sites'
 import { DEFAULT_OMNIBOX_SETTINGS, type OmniboxSettings } from './omnibox-settings'
+import {
+  DEFAULT_LAUNCHPAD_PREFERENCES,
+  type LaunchpadPreferences
+} from './launchpad'
+import { DEFAULT_PRIVACY_PREFERENCES, type PrivacyPreferences } from './privacy'
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  type AppearancePreferences
+} from './appearance'
+import { DEFAULT_TABS_PREFERENCES, type TabsPreferences } from './tabs'
+import {
+  DEFAULT_LANGUAGE_PREFERENCES,
+  type LanguagePreferences
+} from './languages'
 import type { DeviceFoldState } from './config'
 
 /** Where the sidebar toggle sits in the toolbar. */
@@ -46,6 +60,20 @@ export interface MobilePreset {
 }
 
 /**
+ * Browser preferences that sit above the tab, rather than inside it.
+ *
+ * These are deliberately small and durable: what a new tab opens, what a launch opens, and
+ * whether a bookmark click borrows the current tab. Each one is read by a real code path in
+ * the shell, so the Settings page never has to present a switch that only changes its own state.
+ */
+export interface BrowserPreferences {
+  /** Whether a bookmark click opens beside the current tab instead of navigating it. */
+  openBookmarksInNewTab: boolean
+  /** The zoom percentage applied to every newly attached page. */
+  defaultZoom: number
+}
+
+/**
  * The mobile emulator's own state.
  *
  * Per profile like everything else here, because the device someone tests on is part of how they
@@ -68,7 +96,7 @@ export interface ProfilePreferences {
   aiProvider: AiSiteId
   /**
    * The omnibox's own configuration: the default engine, the operator's engines and shortcuts,
-   * and which local sources the dropdown may draw from (`devlens:settings/omnibox` writes it).
+   * and which local sources the dropdown may draw from (`devlens:settings/search` writes it).
    */
   omnibox: OmniboxSettings
   /**
@@ -77,6 +105,18 @@ export interface ProfilePreferences {
    */
   toolbar: ToolbarLayout
   mobile: MobileSettings
+  /** Launchpad targets, widgets, activity and session restoration. */
+  launchpad: LaunchpadPreferences
+  /** Shield, retention, DNS and storage exceptions. */
+  privacy: PrivacyPreferences
+  /** Content theme, workspace chrome theme, app icon and density. */
+  appearance: AppearancePreferences
+  /** Tab layout, interaction, containers and media behavior. */
+  tabs: TabsPreferences
+  /** Interface, web content, translation and spell-check language preferences. */
+  languages: LanguagePreferences
+  /** Home, startup, tab-opening and default-zoom choices. */
+  browser: BrowserPreferences
 }
 
 export const DEFAULT_MOBILE_SETTINGS: MobileSettings = {
@@ -94,9 +134,20 @@ export const DEFAULT_TOOLBAR_LAYOUT: ToolbarLayout = {
   tools: { viewport: true, scrollSync: true, openInIde: true, defense: true }
 }
 
+export const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
+  openBookmarksInNewTab: false,
+  defaultZoom: 100
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   aiProvider: DEFAULT_AI_SITE,
   omnibox: DEFAULT_OMNIBOX_SETTINGS,
   toolbar: DEFAULT_TOOLBAR_LAYOUT,
-  mobile: DEFAULT_MOBILE_SETTINGS
+  mobile: DEFAULT_MOBILE_SETTINGS,
+  launchpad: DEFAULT_LAUNCHPAD_PREFERENCES,
+  privacy: DEFAULT_PRIVACY_PREFERENCES,
+  appearance: DEFAULT_APPEARANCE_PREFERENCES,
+  tabs: DEFAULT_TABS_PREFERENCES,
+  languages: DEFAULT_LANGUAGE_PREFERENCES,
+  browser: DEFAULT_BROWSER_PREFERENCES
 }

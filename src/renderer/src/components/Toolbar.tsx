@@ -125,9 +125,9 @@ interface ToolbarProps {
     onPrint: () => void
     onSavePage: () => void
     onFind: () => void
-    onZoomIn: () => void
-    onZoomOut: () => void
-    onZoomReset: () => void
+    onZoomIn: () => Promise<number>
+    onZoomOut: () => Promise<number>
+    onZoomReset: () => Promise<number>
     /** Reads the active guest's zoom as a whole percentage; shown in the Zoom row. */
     onGetZoomPercent: () => Promise<number>
     onSettings: () => void

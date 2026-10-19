@@ -1,7 +1,8 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { activeProfileId } from './profiles'
+import type { ProfileDiskUsage } from '../shared/privacy'
 
 /**
  * Per-profile local storage.
@@ -28,4 +29,26 @@ export function profileDataDir(): string {
 /** Absolute path of a file inside the active profile's data directory. */
 export function profileFile(name: string): string {
   return join(profileDataDir(), name)
+}
+
+/** Actual bytes held by this profile's local data directory. */
+export function profileDiskUsage(): ProfileDiskUsage {
+  let bytes = 0
+  let files = 0
+  const walk = (dir: string): void => {
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (entry.isFile()) {
+          files += 1
+          bytes += statSync(path).size
+        }
+      }
+    } catch {
+      /* a file disappearing during the walk simply is not counted */
+    }
+  }
+  walk(profileDataDir())
+  return { bytes, files }
 }

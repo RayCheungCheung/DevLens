@@ -11,23 +11,45 @@
  * place is what stops a route from being spelled three ways.
  */
 
-export type InternalRouteId = 'newtab' | 'omnibox-settings' | 'history' | 'settings' | 'bookmarks'
+export type InternalRouteId =
+  | 'newtab'
+  | 'blank'
+  | 'history'
+  | 'settings'
+  | 'appearance-themes'
+  | 'bookmarks'
+
+/** Every addressable section of the settings centre. */
+export const SETTINGS_CATEGORY_IDS = [
+  'home',
+  'search',
+  'privacy',
+  'appearance',
+  'tabs',
+  'developer',
+  'identity',
+  'languages'
+] as const
+
+export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number]
 
 export const INTERNAL_ROUTES: Record<InternalRouteId, string> = {
   /** The dashboard is an empty tab's page; it has a URL for completeness, not for typing. */
   newtab: 'devlens:newtab',
-  'omnibox-settings': 'devlens:settings/omnibox',
+  blank: 'devlens:blank',
+  'appearance-themes': 'devlens:settings/themes',
   /** This profile's visited pages, as a full tab surface - not just the dock's panel. */
   history: 'devlens:history',
   /** The profile settings hub; the omnibox section is one of its pages. */
-  settings: 'devlens:settings',
+  settings: 'devlens:settings/home',
   /** Saved bookmarks, as a full tab surface. */
   bookmarks: 'devlens:bookmarks'
 }
 
 const ROUTE_LABELS: Record<InternalRouteId, string> = {
   newtab: 'New tab',
-  'omnibox-settings': 'Omnibox & Engines',
+  blank: 'Blank Canvas',
+  'appearance-themes': 'DevLens Themes',
   history: 'History',
   settings: 'Settings',
   bookmarks: 'Bookmarks'
@@ -43,11 +65,36 @@ export function internalRouteLabel(route: InternalRouteId): string {
   return ROUTE_LABELS[route]
 }
 
+/** The canonical URL for one settings category. */
+export function settingsCategoryUrl(category: SettingsCategoryId): string {
+  return `devlens:settings/${category}`
+}
+
+/**
+ * The settings category a URL names.
+ *
+ * The bare centre resolves to Home, and an unknown section also falls back there rather than
+ * turning a mistyped `devlens:` address into a web search. `/omnibox` remains its own route and
+ * is handled before this helper is asked for a settings category.
+ */
+export function settingsCategoryOf(url: string | null | undefined): SettingsCategoryId {
+  if (!url) return 'home'
+  const normalized = url.trim().replace(/\/+$/, '').toLowerCase()
+  const prefix = 'devlens:settings/'
+  if (!normalized.startsWith(prefix)) return 'home'
+  const candidate = normalized.slice(prefix.length)
+  /* The old standalone control panel is now the Search category. */
+  if (candidate === 'omnibox') return 'search'
+  return (SETTINGS_CATEGORY_IDS as readonly string[]).includes(candidate)
+    ? (candidate as SettingsCategoryId)
+    : 'home'
+}
+
 /**
  * The route a URL names, or null when it is an ordinary address.
  *
  * Compared case-insensitively and without a trailing slash: an operator who types
- * `devlens:settings/omnibox/` meant the same page, and answering that with a search for the text
+ * `devlens:settings/search/` meant the same page, and answering that with a search for the text
  * would be the shell pretending not to know its own name.
  */
 export function internalRouteOf(url: string | null | undefined): InternalRouteId | null {
@@ -55,6 +102,9 @@ export function internalRouteOf(url: string | null | undefined): InternalRouteId
   const normalized = url.trim().replace(/\/+$/, '').toLowerCase()
   for (const [route, value] of Object.entries(INTERNAL_ROUTES) as [InternalRouteId, string][]) {
     if (value.toLowerCase() === normalized) return route
+  }
+  if (normalized === 'devlens:settings' || normalized.startsWith('devlens:settings/')) {
+    return 'settings'
   }
   return null
 }
@@ -82,7 +132,6 @@ export function isInternalUrl(url: string | null | undefined): boolean {
 
 /** Route ids whose page can be opened in a tab by the operator. */
 export const OPENABLE_ROUTES: InternalRouteId[] = [
-  'omnibox-settings',
   'history',
   'settings',
   'bookmarks'

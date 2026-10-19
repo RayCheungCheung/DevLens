@@ -149,7 +149,7 @@ export type OmniboxAction =
    * favicon instead.
    */
   | { kind: 'entry'; url: string; entryId: string; query: string; label: string }
-  /** One of the shell's own pages (`devlens:settings/omnibox`). */
+  /** One of the shell's own pages (`devlens:settings/search`). */
   | { kind: 'internal'; route: InternalRouteId; url: string; label: string }
   | { kind: 'hub-search'; url: string; hub: PlatformHubId; query: string; label: string }
   | { kind: 'ghost'; url: string | null; label: string }

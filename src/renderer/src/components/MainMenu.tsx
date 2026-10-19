@@ -31,9 +31,9 @@ interface MainMenuProps {
   onPrint: () => void
   onSavePage: () => void
   onFind: () => void
-  onZoomIn: () => void
-  onZoomOut: () => void
-  onZoomReset: () => void
+  onZoomIn: () => Promise<number>
+  onZoomOut: () => Promise<number>
+  onZoomReset: () => Promise<number>
   /** Reads the active guest's zoom as a whole percentage; shown in the Zoom row. */
   onGetZoomPercent: () => Promise<number>
   onSettings: () => void
@@ -77,6 +77,7 @@ export function MainMenu({
   const [open, setOpen] = useState(false)
   /** The active guest's zoom, refreshed whenever the menu opens. 100 until read. */
   const [zoomPercent, setZoomPercent] = useState(100)
+  const [zoomBusy, setZoomBusy] = useState(false)
   const wrapper = useRef<HTMLDivElement | null>(null)
   useMenuDismiss({ ref: wrapper, onClose: () => setOpen(false) })
 
@@ -97,6 +98,18 @@ export function MainMenu({
       cancelled = true
     }
   }, [open, onGetZoomPercent])
+
+  /** Run one zoom action, then show the percentage the page actually reports. */
+  const adjustZoom = async (action: () => Promise<number>): Promise<void> => {
+    if (zoomBusy) return
+    setZoomBusy(true)
+    try {
+      const value = await action()
+      if (Number.isFinite(value) && value > 0) setZoomPercent(value)
+    } finally {
+      setZoomBusy(false)
+    }
+  }
 
   /** One command row: an icon, a label, and a right-aligned keyboard shortcut or sub-menu chevron. */
   const row = (
@@ -166,17 +179,6 @@ export function MainMenu({
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-100">{profileName}</span>
             <ChevronRight size={14} className="shrink-0 text-ink-500" />
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="main-menu-profile-personal"
-            onClick={() => run(onOpenProfileMenu)}
-            className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.04]"
-          >
-            <Star size={15} className="shrink-0 text-ink-400" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-100">Personal</span>
-            <ChevronRight size={13} className="shrink-0 text-ink-500" />
-          </button>
 
           {divider('before-window')}
 
@@ -212,8 +214,9 @@ export function MainMenu({
                 type="button"
                 data-testid="main-menu-zoom-out"
                 title="Zoom out"
-                onClick={onZoomOut}
-                className="flex h-6 w-6 items-center justify-center rounded text-[15px] leading-none text-ink-200 hover:bg-white/5"
+                disabled={zoomBusy}
+                onClick={() => void adjustZoom(onZoomOut)}
+                className="flex h-6 w-6 items-center justify-center rounded text-[15px] leading-none text-ink-200 hover:bg-white/5 disabled:cursor-wait disabled:text-ink-600"
               >
                 &minus;
               </button>
@@ -221,8 +224,9 @@ export function MainMenu({
                 type="button"
                 data-testid="main-menu-zoom-reset"
                 title="Reset zoom to 100%"
-                onClick={onZoomReset}
-                className="min-w-[42px] rounded px-1 py-1 text-center font-mono text-[11px] text-ink-200 hover:bg-white/5"
+                disabled={zoomBusy}
+                onClick={() => void adjustZoom(onZoomReset)}
+                className="min-w-[42px] rounded px-1 py-1 text-center font-mono text-[11px] text-ink-200 hover:bg-white/5 disabled:cursor-wait disabled:text-ink-600"
               >
                 {zoomPercent}%
               </button>
@@ -230,8 +234,9 @@ export function MainMenu({
                 type="button"
                 data-testid="main-menu-zoom-in"
                 title="Zoom in"
-                onClick={onZoomIn}
-                className="flex h-6 w-6 items-center justify-center rounded text-[15px] leading-none text-ink-200 hover:bg-white/5"
+                disabled={zoomBusy}
+                onClick={() => void adjustZoom(onZoomIn)}
+                className="flex h-6 w-6 items-center justify-center rounded text-[15px] leading-none text-ink-200 hover:bg-white/5 disabled:cursor-wait disabled:text-ink-600"
               >
                 +
               </button>

@@ -19,7 +19,7 @@ interface SettingsPanelProps {
   /** Where the sidebar handle sits, and which toolbar tools are allowed to show. */
   layout: { sidebarToggle: SidebarTogglePosition; tools: ToolbarTools }
   onLayout: (patch: { sidebarToggle?: SidebarTogglePosition; tools?: Partial<ToolbarTools> }) => void
-  /** Opens `devlens:settings/omnibox` as a tab: the engine and shortcut configuration. */
+  /** Opens Omnibox settings in the main settings tab: engines, shortcuts and suggestions. */
   onOpenOmniboxSettings: () => void
 }
 
@@ -87,7 +87,7 @@ export function SettingsPanel({
       <section className="border-b border-[var(--devlens-hairline)] px-3 py-3">
         <h3 className="flex items-center gap-1.5 text-[11px] text-ink-200">
           <Compass size={12} className="text-[var(--devlens-accent)]" />
-          Omnibox &amp; Engines
+          Omnibox settings
         </h3>
         <p className="mt-1.5 text-[10px] leading-4 text-ink-500">
           The default engine, your own engines and shortcuts, and what the dropdown may suggest.
@@ -98,8 +98,8 @@ export function SettingsPanel({
           onClick={onOpenOmniboxSettings}
           className="mt-2 flex w-full items-center justify-between rounded border border-[var(--devlens-hairline)] px-2 py-1.5 text-[11px] text-ink-200 hover:border-[var(--devlens-accent-line)] hover:bg-white/[0.03]"
         >
-          Open the control panel
-          <span className="font-mono text-[9px] text-ink-500">devlens:settings/omnibox</span>
+          Open Omnibox settings
+          <span className="font-mono text-[9px] text-ink-500">devlens:settings/search</span>
         </button>
       </section>
 

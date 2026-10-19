@@ -205,18 +205,17 @@ export function instrumentGuest(contents: WebContents): void {
   })
 
   /**
-   * Ctrl + the mouse wheel zooms the guest in real time: wheel up zooms in, wheel out.
+   * Ctrl/Cmd+F belongs to the browser even while a page owns focus.
    *
-   * The shell's DOM never sees the wheel - it lands in the guest's web contents - so this lives
-   * in the main process where the zoom state actually is. The clamp matches the menu's zoom, and
-   * `before-input-event` + preventDefault stops the guest's own pinch/zoom from also firing.
+   * The guest receives the keydown directly, so the shell's window listener never sees it. Main
+   * recognises the one chord here and asks the shell to open its Find Bar; the guest bridge
+   * handles Ctrl/Cmd + wheel because Electron's `before-input-event` is keyboard-only.
    */
   contents.on('before-input-event', (event, input) => {
-    if (input.type !== 'mouseWheel' || !input.control) return
+    if (input.type !== 'keyDown' || !(input.control || input.meta)) return
+    if (input.shift || input.key.toLowerCase() !== 'f') return
     event.preventDefault()
-    const step = input.wheelDeltaY > 0 ? 0.1 : -0.1
-    const next = Math.max(-5, Math.min(5, contents.getZoomLevel() + step))
-    contents.setZoomLevel(next)
+    emitter(IPC.findInPageRequested, { webContentsId: guestId })
   })
 
   contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {

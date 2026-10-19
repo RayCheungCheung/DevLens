@@ -4,6 +4,7 @@ import {
   type ProtectionPolicy
 } from '../shared/protection'
 import type { ProtectionState } from '../shared/types'
+import type { ShieldRules } from '../shared/privacy'
 import { trackedHostTier } from './tracker-list'
 import { isWimhActive, setWimhEnabled } from './wimh'
 
@@ -28,6 +29,12 @@ let scrubbedHeaders = 0
 let trimmedReferers = 0
 /** True when *this* level switch turned the RAM-only session on, so leaving can turn it off. */
 let ramOnlyFromLevel = false
+let shieldRules: ShieldRules = {
+  crossSiteTrackers: true,
+  fingerprinters: false,
+  cryptominers: true,
+  sendDnt: true
+}
 
 /**
  * Per-site exemptions, session only.
@@ -94,7 +101,26 @@ export function protectionLevelNow(): ProtectionLevel {
 }
 
 export function protectionPolicyNow(): ProtectionPolicy {
-  return protectionPolicy(level)
+  const base = protectionPolicy(level)
+  return {
+    ...base,
+    aggressiveBlocklist:
+      base.aggressiveBlocklist && (shieldRules.crossSiteTrackers || shieldRules.cryptominers),
+    privacyHeaders: base.privacyHeaders && (shieldRules.fingerprinters || shieldRules.sendDnt),
+    trimCrossSiteReferer: base.trimCrossSiteReferer && shieldRules.crossSiteTrackers
+  }
+}
+
+export function setShieldRules(next: Partial<ShieldRules>): ProtectionState {
+  shieldRules = {
+    crossSiteTrackers: next.crossSiteTrackers !== false,
+    fingerprinters: next.fingerprinters === true,
+    cryptominers: next.cryptominers !== false,
+    sendDnt: next.sendDnt !== false
+  }
+  const state = protectionStateNow()
+  notify(state)
+  return state
 }
 
 function resetCounters(): void {
@@ -106,7 +132,7 @@ function resetCounters(): void {
 export function protectionStateNow(): ProtectionState {
   return {
     level,
-    policy: protectionPolicy(level),
+    policy: protectionPolicyNow(),
     blockedRequests,
     scrubbedHeaders,
     trimmedReferers,

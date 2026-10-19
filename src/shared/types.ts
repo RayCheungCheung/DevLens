@@ -466,6 +466,14 @@ export interface FindResult {
   error: string | null
 }
 
+/** One native `find-in-page` update from a guest. */
+export interface FindInPageResult {
+  webContentsId: number
+  activeMatchOrdinal: number
+  matches: number
+  finalUpdate: boolean
+}
+
 /**
  * What was under a right-click in a page.
  *

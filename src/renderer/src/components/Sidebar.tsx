@@ -129,7 +129,7 @@ interface SidebarProps {
     /** Chrome arrangement: where the dock handle sits and which tools the toolbar shows. */
     layout: { sidebarToggle: SidebarTogglePosition; tools: ToolbarTools }
     onLayout: (patch: { sidebarToggle?: SidebarTogglePosition; tools?: Partial<ToolbarTools> }) => void
-    /** Opens the omnibox control panel (`devlens:settings/omnibox`) as a tab. */
+    /** Opens Search settings (`devlens:settings/search`) as a tab. */
     onOpenOmniboxSettings: () => void
   }
   /** Developer panels that are not one of the original five. */

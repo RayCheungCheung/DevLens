@@ -1,10 +1,13 @@
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   ipcMain,
+  nativeTheme,
   session,
   webContents,
   type WebContents
@@ -45,7 +48,7 @@ import { isProtectionLevel, type ProtectionLevel } from '../shared/protection'
 import { abort as abortAi, ask as askAi, describeProvider } from './ai'
 import { loadConfig } from './config'
 import { instrumentGuest, registerGuest, setEmitter } from './guests'
-import { flushHistory, historyAdd, historyClear, historyList } from './history'
+import { flushHistory, historyAdd, historyClear, historyList, historyPrune } from './history'
 import {
   bookmarkSnapshot,
   clipboardAction,
@@ -83,6 +86,7 @@ import {
   configureProtection,
   protectionStateNow,
   setProtectionLevel,
+  setShieldRules,
   setSiteAllowed
 } from './protection'
 import {
@@ -112,9 +116,23 @@ import {
   setRules
 } from './interceptor'
 import { saveTextFile, writeClipboard } from './output'
-import { flushPreferences, preferencesNow, setPreferences } from './preferences'
+import {
+  flushPreferences,
+  preferencesNow,
+  setLaunchpadSession,
+  setPreferences
+} from './preferences'
 import type { ProfilePreferences } from '../shared/preferences'
 import type { OmniboxSettings } from '../shared/omnibox-settings'
+import type {
+  LaunchpadSession,
+  LaunchpadSystemState,
+  LaunchpadWeather
+} from '../shared/launchpad'
+import type { ShieldRules } from '../shared/privacy'
+import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
+import { appIconFor } from './app-icons'
+import { profileDiskUsage } from './storage'
 import {
   closePrivateTab,
   configurePrivateTabs,
@@ -393,12 +411,45 @@ function registerIpcHandlers(): void {
     }
   )
 
+  /** Electron zoom levels are logarithmic: percent = 1.2 ^ level. */
+  const zoomPercentOf = (target: WebContents): number =>
+    Math.round(Math.pow(1.2, target.getZoomLevel()) * 100)
+
+  const clampZoomLevel = (level: number): number => Math.max(-4, Math.min(4, level))
+
+  const setZoomPercent = (target: WebContents, percent: number): number => {
+    const safePercent = Number.isFinite(percent) ? Math.min(250, Math.max(50, percent)) : 100
+    const level = Math.log(safePercent / 100) / Math.log(1.2)
+    target.setZoomLevel(clampZoomLevel(level))
+    return zoomPercentOf(target)
+  }
+
   /** Read a guest's zoom, in percent, for the menu's zoom row. 0 means 100%. */
   ipcMain.handle(IPC.pageZoom, (_event, webContentsId?: number): number => {
     const target = webContentsId ? webContents.fromId(webContentsId) : null
     if (!target || target.isDestroyed()) return 0
-    return Math.round((1 + target.getZoomLevel()) * 100)
+    return zoomPercentOf(target)
   })
+
+  ipcMain.handle(
+    IPC.pageZoomBy,
+    (_event, webContentsId?: number, delta?: number): number => {
+      const target = webContentsId ? webContents.fromId(webContentsId) : null
+      if (!target || target.isDestroyed()) return 0
+      const step = Number.isFinite(delta) ? Number(delta) : 0
+      target.setZoomLevel(clampZoomLevel(target.getZoomLevel() + step))
+      return zoomPercentOf(target)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.pageZoomSet,
+    (_event, webContentsId?: number, percent?: number): number => {
+      const target = webContentsId ? webContents.fromId(webContentsId) : null
+      if (!target || target.isDestroyed()) return 0
+      return setZoomPercent(target, Number(percent))
+    }
+  )
 
   /* ---------------- Omnibox ---------------- */
 
@@ -432,6 +483,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.historyClear, () => {
     historyClear()
   })
+
+  ipcMain.handle(IPC.historyPrune, (_event, days?: number): number =>
+    historyPrune(Number(days) || 90)
+  )
 
   /** Bookmarks are local and tiny; the renderer ranks them together with history. */
   ipcMain.handle(IPC.bookmarksList, (): BookmarkEntry[] => listBookmarks())
@@ -619,6 +674,147 @@ function registerIpcHandlers(): void {
       broadcastPreferences(setPreferences(patch ?? {}))
   )
 
+  const systemStateNow = (): LaunchpadSystemState => ({
+    isDefaultBrowser:
+      app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https'),
+    launchAtLogin: app.getLoginItemSettings().openAtLogin
+  })
+
+  ipcMain.handle(IPC.launchpadSystemState, systemStateNow)
+
+  ipcMain.handle(IPC.launchpadSetDefaultBrowser, (): LaunchpadSystemState => {
+    app.setAsDefaultProtocolClient('http')
+    app.setAsDefaultProtocolClient('https')
+    return systemStateNow()
+  })
+
+  ipcMain.handle(
+    IPC.launchpadSetLaunchAtLogin,
+    (_event, enabled?: boolean): LaunchpadSystemState => {
+      app.setLoginItemSettings({ openAtLogin: Boolean(enabled) })
+      return systemStateNow()
+    }
+  )
+
+  ipcMain.handle(
+    IPC.launchpadSaveSession,
+    (_event, session: LaunchpadSession): LaunchpadSession => setLaunchpadSession(session)
+  )
+
+  ipcMain.handle(IPC.launchpadPickWallpaper, async () => {
+    try {
+      const options: Electron.OpenDialogOptions = {
+        title: 'Choose Launchpad wallpaper',
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      }
+      const result = shellWindow
+        ? await dialog.showOpenDialog(shellWindow, options)
+        : await dialog.showOpenDialog(options)
+      if (result.canceled || !result.filePaths[0]) {
+        return { ok: false, dataUrl: null, error: null }
+      }
+      const file = result.filePaths[0]
+      const bytes = readFileSync(file)
+      if (bytes.length > 4 * 1024 * 1024) {
+        return { ok: false, dataUrl: null, error: 'image must be smaller than 4 MB' }
+      }
+      const extension = extname(file).toLowerCase()
+      const mime =
+        extension === '.webp'
+          ? 'image/webp'
+          : extension === '.png'
+            ? 'image/png'
+            : 'image/jpeg'
+      return {
+        ok: true,
+        dataUrl: `data:${mime};base64,${bytes.toString('base64')}`,
+        error: null
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        dataUrl: null,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  ipcMain.handle(
+    IPC.launchpadWeather,
+    (_event, place?: string): Promise<LaunchpadWeather> =>
+      lookupWeather(String(place ?? '').trim())
+  )
+
+  ipcMain.handle(
+    IPC.privacyApplyNetwork,
+    (_event, input?: { dnsMode?: string }): { dnsMode: string } => {
+      const dnsMode =
+        input?.dnsMode === 'off' || input?.dnsMode === 'system' ? input.dnsMode : 'secure'
+      app.configureHostResolver({
+        secureDnsMode:
+          dnsMode === 'secure' ? 'secure' : dnsMode === 'off' ? 'off' : 'automatic',
+        secureDnsServers:
+          dnsMode === 'secure' ? ['https://cloudflare-dns.com/dns-query'] : []
+      })
+      return { dnsMode }
+    }
+  )
+
+  ipcMain.handle(IPC.privacyDiskUsage, () => profileDiskUsage())
+
+  ipcMain.handle(
+    IPC.appearanceApplyTheme,
+    (_event, mode?: ContentThemeMode): ContentThemeMode => {
+      const next = mode === 'light' || mode === 'dark' ? mode : 'system'
+      nativeTheme.themeSource = next
+      return next
+    }
+  )
+
+  ipcMain.handle(
+    IPC.appearanceSetAppIcon,
+    (_event, style?: AppIconStyle): AppIconStyle => {
+      const next: AppIconStyle =
+        style === 'violet' ||
+        style === 'amber' ||
+        style === 'mono' ||
+        style === 'neon'
+          ? style
+          : 'default'
+      const image = appIconFor(next)
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.setIcon(image)
+      }
+      if (process.platform === 'darwin') app.dock?.setIcon(image)
+      return next
+    }
+  )
+
+  ipcMain.handle(
+    IPC.languagesApply,
+    (
+      _event,
+      input?: { spellCheck?: boolean; spellCheckLanguages?: string[] }
+    ): { spellCheck: boolean; spellCheckLanguages: string[] } => {
+      const ses = session.fromPartition(activeProfilePartition(), { cache: true })
+      const enabled = input?.spellCheck !== false
+      ses.spellCheckerEnabled = enabled
+      const languages = Array.isArray(input?.spellCheckLanguages)
+        ? input.spellCheckLanguages.filter((value) => typeof value === 'string').slice(0, 5)
+        : []
+      try {
+        if (enabled && languages.length > 0) ses.setSpellCheckerLanguages(languages)
+      } catch {
+        /* unsupported dictionaries simply stay unavailable */
+      }
+      return {
+        spellCheck: ses.spellCheckerEnabled,
+        spellCheckLanguages: ses.getSpellCheckerLanguages()
+      }
+    }
+  )
+
   /* The omnibox control panel, addressed by its own route: same store, one name per page. */
   ipcMain.handle(IPC.omniboxSettingsGet, (): OmniboxSettings => preferencesNow().omnibox)
 
@@ -760,6 +956,11 @@ function registerIpcHandlers(): void {
       setSiteAllowed(String(payload?.site ?? ''), payload?.allowed !== false)
   )
 
+  ipcMain.handle(
+    IPC.protectionSetShieldRules,
+    (_event, rules: ShieldRules): ProtectionState => setShieldRules(rules ?? {})
+  )
+
   /* ---------------- New tab dashboard ---------------- */
 
   ipcMain.handle(IPC.localServersScan, (): Promise<LocalServerScan> =>
@@ -847,6 +1048,89 @@ function wireGuestInstrumentation(): void {
     if (!isGuestContents(contents.getType())) return
     instrumentGuest(contents)
   })
+}
+
+const WEATHER_LABELS: Record<number, string> = {
+  0: 'Clear',
+  1: 'Mostly clear',
+  2: 'Partly cloudy',
+  3: 'Overcast',
+  45: 'Fog',
+  48: 'Rime fog',
+  51: 'Light drizzle',
+  53: 'Drizzle',
+  55: 'Heavy drizzle',
+  61: 'Light rain',
+  63: 'Rain',
+  65: 'Heavy rain',
+  71: 'Light snow',
+  73: 'Snow',
+  75: 'Heavy snow',
+  80: 'Rain showers',
+  81: 'Heavy showers',
+  82: 'Violent showers',
+  95: 'Thunderstorm',
+  96: 'Storm with hail',
+  99: 'Severe storm'
+}
+
+/** Weather is fetched in main so the shell keeps a narrow CSP and the renderer stays offline. */
+async function lookupWeather(place: string): Promise<LaunchpadWeather> {
+  const requested = place || 'Macau'
+  try {
+    const geoResponse = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(requested)}&count=1&language=en&format=json`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!geoResponse.ok) throw new Error(`location lookup returned ${geoResponse.status}`)
+    const geo = (await geoResponse.json()) as {
+      results?: { name?: string; latitude?: number; longitude?: number }[]
+    }
+    const found = geo.results?.[0]
+    if (!found || typeof found.latitude !== 'number' || typeof found.longitude !== 'number') {
+      return {
+        ok: false,
+        place: requested,
+        temperatureC: null,
+        weather: null,
+        windKph: null,
+        error: `could not find ${requested}`
+      }
+    }
+    const forecastResponse = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${found.latitude}&longitude=${found.longitude}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!forecastResponse.ok) throw new Error(`weather returned ${forecastResponse.status}`)
+    const forecast = (await forecastResponse.json()) as {
+      current?: { temperature_2m?: number; weather_code?: number; wind_speed_10m?: number }
+    }
+    const current = forecast.current
+    return {
+      ok: true,
+      place: found.name || requested,
+      temperatureC: Number.isFinite(current?.temperature_2m)
+        ? Number(current?.temperature_2m)
+        : null,
+      weather:
+        typeof current?.weather_code === 'number'
+          ? WEATHER_LABELS[current.weather_code] ?? `Code ${current.weather_code}`
+          : null,
+      windKph: Number.isFinite(current?.wind_speed_10m)
+        ? Number(current?.wind_speed_10m)
+        : null,
+      error: null
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      place: requested,
+      temperatureC: null,
+      weather: null,
+      windKph: null,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 function boot(): void {

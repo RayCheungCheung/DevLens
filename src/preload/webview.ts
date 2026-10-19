@@ -25,7 +25,10 @@ const APPLY_SCROLL_CHANNEL = 'devlens:viewport:apply-scroll' satisfies IpcChanne
 const DESIGN_MODE_CHANNEL = 'devlens:viewport:design-mode' satisfies IpcChannel
 const FIND_CHANNEL = 'devlens:viewport:find' satisfies IpcChannel
 const FIND_RESULT_CHANNEL = 'devlens:viewport:find-result' satisfies IpcChannel
+const TEXT_FIND_CHANNEL = 'devlens:viewport:text-find' satisfies IpcChannel
+const TEXT_FIND_RESULT_CHANNEL = 'devlens:viewport:text-find-result' satisfies IpcChannel
 const CONTEXT_MENU_CHANNEL = 'devlens:viewport:context-menu' satisfies IpcChannel
+const ZOOM_WHEEL_RESULT_CHANNEL = 'devlens:viewport:zoom-wheel-result' satisfies IpcChannel
 const FOLD_CHANNEL = 'devlens:viewport:fold' satisfies IpcChannel
 const MODE_CHANNEL = 'devlens:viewport:mode' satisfies IpcChannel
 
@@ -51,8 +54,12 @@ function canInspectPage(): boolean {
 
 const DESIGN_MODE_STYLE_ID = 'devlens-design-mode-style'
 const FIND_STYLE_ID = 'devlens-find-style'
+const TEXT_FIND_STYLE_ID = 'devlens-text-find-style'
+const TEXT_FIND_HIGHLIGHT = 'devlens-page-find'
+const TEXT_FIND_CURRENT_HIGHLIGHT = 'devlens-page-find-current'
 const FIND_ATTR = 'data-devlens-find-index'
 const FIND_LIMIT = 200
+const TEXT_FIND_LIMIT = 500
 const DESIGN_MODE_CSS = [
   'html { caret-color: #14b8a6; }',
   'body *:hover { outline: 1px dashed rgba(45, 212, 191, 0.55) !important; outline-offset: -1px; }',
@@ -236,6 +243,24 @@ ipcRenderer.on(FIND_CHANNEL, (_event, message: { selector?: string; clear?: bool
   void handleFind(String(message?.selector ?? ''), Boolean(message?.clear))
 })
 
+ipcRenderer.on(
+  TEXT_FIND_CHANNEL,
+  (
+    _event,
+    message: { query?: string; forward?: boolean; findNext?: boolean; clear?: boolean }
+  ) => {
+    if (message?.clear) {
+      clearTextFind()
+      return
+    }
+    runTextFind(
+      String(message?.query ?? ''),
+      message?.forward !== false,
+      message?.findNext === true
+    )
+  }
+)
+
 ipcRenderer.on(MODE_CHANNEL, (_event, message: { dev?: boolean; inspection?: boolean }) => {
   devCapabilitiesEnabled = Boolean(message?.dev)
   inspectionLease = devCapabilitiesEnabled ? false : Boolean(message?.inspection)
@@ -305,6 +330,164 @@ async function handleFind(selector: string, clear: boolean): Promise<void> {
       error: error instanceof Error ? error.message : String(error)
     })
   }
+}
+
+/**
+ * The shell's Find Bar, implemented against the page's text rather than a browser dialog.
+ *
+ * Chromium's embedded-webview finder returns a request id in this runtime but does not emit
+ * results, so the guest does the deterministic half: collect text ranges, paint every match with
+ * the CSS Custom Highlight API, scroll the active one into view, and report its ordinal. The DOM
+ * itself is never wrapped or rewritten, so React pages and live apps keep their structure.
+ */
+let textFindQuery = ''
+let textFindRanges: Range[] = []
+let textFindIndex = 0
+let textFindUsesSelection = false
+
+function runTextFind(query: string, forward: boolean, findNext: boolean): void {
+  const clean = query.trim()
+  if (!clean) {
+    clearTextFind()
+    return
+  }
+
+  if (clean !== textFindQuery || textFindRanges.length === 0) {
+    textFindQuery = clean
+    textFindRanges = collectTextRanges(clean)
+    textFindIndex = 0
+  } else if (findNext) {
+    const count = textFindRanges.length
+    textFindIndex = (textFindIndex + (forward ? 1 : -1) + count) % count
+  }
+
+  applyTextFindHighlights()
+  const current = textFindRanges[textFindIndex]
+  if (current) revealTextRange(current)
+  ipcRenderer.sendToHost(TEXT_FIND_RESULT_CHANNEL, {
+    activeMatchOrdinal: textFindRanges.length ? textFindIndex + 1 : 0,
+    matches: textFindRanges.length,
+    finalUpdate: true
+  })
+}
+
+function collectTextRanges(query: string): Range[] {
+  const ranges: Range[] = []
+  const root = document.body ?? document.documentElement
+  if (!root) return ranges
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const needle = query.toLocaleLowerCase()
+  let node = walker.nextNode()
+  while (node && ranges.length < TEXT_FIND_LIMIT) {
+    const text = node.nodeValue ?? ''
+    const parent = node.parentElement
+    if (text && parent && !parent.closest('script,style,noscript,template,svg,textarea,select,option')) {
+      const haystack = text.toLocaleLowerCase()
+      let offset = haystack.indexOf(needle)
+      while (offset >= 0 && ranges.length < TEXT_FIND_LIMIT) {
+        const range = document.createRange()
+        range.setStart(node, offset)
+        range.setEnd(node, offset + query.length)
+        // A range with no client rects belongs to hidden or unrendered content.
+        if (range.getClientRects().length > 0) ranges.push(range)
+        offset = haystack.indexOf(needle, offset + Math.max(1, needle.length))
+      }
+    }
+    node = walker.nextNode()
+  }
+  return ranges
+}
+
+function applyTextFindHighlights(): void {
+  injectTextFindStyle()
+  const highlightWindow = window as unknown as {
+    Highlight?: new (...ranges: Range[]) => unknown
+  }
+  const registry = (
+    typeof CSS !== 'undefined' ? CSS : undefined
+  ) as unknown as
+    | { highlights?: { set: (name: string, highlight: unknown) => void; delete: (name: string) => void } }
+    | undefined
+  const highlights = registry?.highlights
+
+  if (highlights) {
+    highlights.delete(TEXT_FIND_HIGHLIGHT)
+    highlights.delete(TEXT_FIND_CURRENT_HIGHLIGHT)
+    if (textFindRanges.length && highlightWindow.Highlight) {
+      highlights.set(
+        TEXT_FIND_HIGHLIGHT,
+        new highlightWindow.Highlight(...textFindRanges)
+      )
+      const current = textFindRanges[textFindIndex]
+      if (current) {
+        highlights.set(
+          TEXT_FIND_CURRENT_HIGHLIGHT,
+          new highlightWindow.Highlight(current)
+        )
+      }
+    }
+    return
+  }
+
+  // Older Chromium: at least keep the active match visually selected.
+  const current = textFindRanges[textFindIndex]
+  if (!current) return
+  const selection = window.getSelection()
+  if (!selection) return
+  selection.removeAllRanges()
+  selection.addRange(current)
+  textFindUsesSelection = true
+}
+
+function injectTextFindStyle(): void {
+  if (document.getElementById(TEXT_FIND_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = TEXT_FIND_STYLE_ID
+  style.textContent = [
+    `::highlight(${TEXT_FIND_HIGHLIGHT}) {`,
+    '  background-color: rgba(250, 204, 21, 0.42);',
+    '  color: inherit;',
+    '}',
+    `::highlight(${TEXT_FIND_CURRENT_HIGHLIGHT}) {`,
+    '  background-color: rgba(45, 212, 191, 0.78);',
+    '  color: #061018;',
+    '}'
+  ].join('\n')
+  ;(document.head ?? document.documentElement).appendChild(style)
+}
+
+function revealTextRange(range: Range): void {
+  const rect = range.getBoundingClientRect()
+  if (rect.bottom < 0 || rect.top > window.innerHeight) {
+    window.scrollBy({ top: rect.top - window.innerHeight / 3, behavior: 'smooth' })
+  } else if (rect.top < 40) {
+    window.scrollBy({ top: rect.top - 80, behavior: 'smooth' })
+  } else if (rect.bottom > window.innerHeight - 24) {
+    window.scrollBy({ top: rect.bottom - window.innerHeight + 48, behavior: 'smooth' })
+  }
+}
+
+function clearTextFind(): void {
+  textFindQuery = ''
+  textFindRanges = []
+  textFindIndex = 0
+  const registry = (
+    typeof CSS !== 'undefined' ? CSS : undefined
+  ) as unknown as
+    | { highlights?: { delete: (name: string) => void } }
+    | undefined
+  registry?.highlights?.delete(TEXT_FIND_HIGHLIGHT)
+  registry?.highlights?.delete(TEXT_FIND_CURRENT_HIGHLIGHT)
+  if (textFindUsesSelection) {
+    window.getSelection()?.removeAllRanges()
+    textFindUsesSelection = false
+  }
+  ipcRenderer.sendToHost(TEXT_FIND_RESULT_CHANNEL, {
+    activeMatchOrdinal: 0,
+    matches: 0,
+    finalUpdate: true
+  })
 }
 
 function describeNode(node: Element, component: string | null): FindHit {
@@ -421,6 +604,24 @@ window.addEventListener(
     })
   },
   true
+)
+
+/**
+ * Ctrl/Cmd + wheel, captured before the page can turn it into its own pinch zoom.
+ *
+ * Electron's `before-input-event` no longer carries mouse-wheel input, so the guest bridge is
+ * the only place that sees both the gesture and its delta. The shell performs the zoom through
+ * the same logarithmic level store as the menu, which keeps all three entry points consistent.
+ */
+window.addEventListener(
+  'wheel',
+  (event: WheelEvent) => {
+    if (!(event.ctrlKey || event.metaKey) || !event.deltaY) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    ipcRenderer.sendToHost(ZOOM_WHEEL_RESULT_CHANNEL, { deltaY: event.deltaY })
+  },
+  { passive: false, capture: true }
 )
 
 // Passive listener keeps scrolling on the compositor fast path: this is the fast path

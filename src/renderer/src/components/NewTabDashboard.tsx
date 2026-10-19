@@ -11,10 +11,15 @@ import type { OmniboxAction, OmniboxSuggestion } from '@shared/omnibox'
 import type { DefaultEngineRef, OmniboxEntry } from '@shared/omnibox-settings'
 import type { WorkspaceMode } from '@shared/mode'
 import type { BookmarkEntry, LocalServer, WimhState, WorkspaceEntry } from '@shared/types'
+import type { LaunchpadPreferences } from '@shared/launchpad'
 import { Checklist } from '@renderer/components/dashboard/Checklist'
+import { DevSpotlight } from '@renderer/components/dashboard/DevSpotlight'
 import { FocusTimer } from '@renderer/components/dashboard/FocusTimer'
 import { QuickLaunch, type Shortcut } from '@renderer/components/dashboard/QuickLaunch'
+import { QuickSnippets } from '@renderer/components/dashboard/QuickSnippets'
 import { ServersWidget } from '@renderer/components/dashboard/ServersWidget'
+import { SystemHealth } from '@renderer/components/dashboard/SystemHealth'
+import { WeatherWidget } from '@renderer/components/dashboard/WeatherWidget'
 import { Widget } from '@renderer/components/dashboard/Widget'
 import { WorkspacesWidget } from '@renderer/components/dashboard/WorkspacesWidget'
 import { WorldClocks } from '@renderer/components/dashboard/WorldClocks'
@@ -50,6 +55,7 @@ interface DashboardOmnibox {
 }
 
 interface NewTabDashboardProps {
+  launchpad: LaunchpadPreferences
   services: {
     servers: LocalServer[]
     scanning: boolean
@@ -105,6 +111,7 @@ function hostOf(url: string): string {
  * at all; what is left is a browser start page with a clock, a timer and a list.
  */
 export function NewTabDashboard({
+  launchpad,
   services,
   omnibox,
   onClose,
@@ -213,6 +220,21 @@ export function NewTabDashboard({
       data-mode={services.mode}
       data-testid="new-tab-dashboard"
       className="nova-ntp absolute inset-0 z-40 overflow-y-auto"
+      style={
+        launchpad.wallpaper
+          ? {
+              backgroundImage: `linear-gradient(rgba(3, 5, 8, ${Math.min(
+                0.82,
+                Math.max(0.12, launchpad.wallpaperDim / 100)
+              )}), rgba(3, 5, 8, ${Math.min(
+                0.9,
+                Math.max(0.2, launchpad.wallpaperDim / 100 + 0.08)
+              )})), url(${launchpad.wallpaper})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center'
+            }
+          : undefined
+      }
     >
       {/* One container, measured on its own width: the pane shrinks when the developer sidebar
           opens, and the grid has to answer to the pane, not to the window. */}
@@ -298,8 +320,21 @@ export function NewTabDashboard({
 
         {/* ---------------- widgets ---------------- */}
         <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2 @6xl:grid-cols-3">
-          <WorldClocks />
-          <FocusTimer />
+          {launchpad.widgets.clock && <WorldClocks />}
+          {launchpad.widgets.devSpotlight && (
+            <DevSpotlight wallpaper={launchpad.wallpaper} dim={launchpad.wallpaperDim} />
+          )}
+          {launchpad.widgets.quickSnippets && <QuickSnippets profileId={services.profileId} />}
+          {launchpad.widgets.systemHealth && (
+            <SystemHealth
+              requests={services.stats.requests}
+              failures={services.stats.failures}
+              consoleErrors={services.stats.consoleErrors}
+              tracked={services.stats.tracked}
+            />
+          )}
+          {launchpad.widgets.weather && <WeatherWidget place={launchpad.weatherPlace} />}
+          {launchpad.widgets.focusTimer && <FocusTimer />}
           <Checklist profileId={services.profileId} />
           <ServersWidget
             servers={services.servers}
@@ -358,7 +393,7 @@ export function NewTabDashboard({
           </div>
         </section>
 
-        {services.recent.length > 0 && (
+        {launchpad.activity.recent && services.recent.length > 0 && (
           <section className="flex flex-col gap-2">
             <h2 className="flex items-center gap-1.5 text-[11px] tracking-wide text-ink-200">
               <History size={12} className="text-[var(--devlens-accent)]" />
@@ -393,6 +428,45 @@ export function NewTabDashboard({
                 </button>
               ))}
             </div>
+          </section>
+        )}
+
+        {launchpad.activity.bookmarks && services.bookmarks.length > 0 && (
+          <section className="flex flex-col gap-2" data-testid="launchpad-bookmarks">
+            <h2 className="flex items-center gap-1.5 text-[11px] tracking-wide text-ink-200">
+              <History size={12} className="text-[var(--devlens-accent)]" />
+              Bookmarks
+            </h2>
+            <div className="grid grid-cols-1 gap-1.5 @2xl:grid-cols-2 @5xl:grid-cols-3">
+              {services.bookmarks.slice(0, 6).map((entry) => (
+                <button
+                  key={entry.url}
+                  type="button"
+                  onClick={(event) =>
+                    onOpenUrl(entry.url, {
+                      newTab: event.altKey || event.ctrlKey || event.metaKey
+                    })
+                  }
+                  title={entry.url}
+                  className="nova-card nova-card--interactive flex min-w-0 flex-col gap-0.5 px-2.5 py-1.5 text-left"
+                >
+                  <span className="w-full truncate text-[11px] text-ink-200">{entry.title}</span>
+                  <span className="w-full truncate font-mono text-[9px] text-ink-600">{entry.url}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {launchpad.activity.downloads && (
+          <section className="flex flex-col gap-2" data-testid="launchpad-downloads">
+            <h2 className="flex items-center gap-1.5 text-[11px] tracking-wide text-ink-200">
+              <History size={12} className="text-[var(--devlens-accent)]" />
+              Downloads
+            </h2>
+            <p className="rounded border border-dashed border-[var(--devlens-hairline)] px-3 py-3 font-mono text-[10px] text-ink-600">
+              no downloads recorded in this session
+            </p>
           </section>
         )}
       </div>

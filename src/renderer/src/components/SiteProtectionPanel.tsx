@@ -1,4 +1,4 @@
-import { Eraser, Lock, ShieldCheck, ShieldOff, Unlock } from 'lucide-react'
+import { Eraser, Lock, ShieldCheck, ShieldOff, SlidersHorizontal, Unlock } from 'lucide-react'
 import { LOCAL_ONLY_GUARANTEE, PROTECTION_DESCRIPTORS, PROTECTION_LEVELS, type ProtectionLevel } from '@shared/protection'
 import type { ProtectionState } from '@shared/types'
 
@@ -13,6 +13,8 @@ interface SiteProtectionPanelProps {
   /** Cookies and storage for this origin, and nothing else. */
   onClearSiteData: () => void
   onLevelChange: (level: ProtectionLevel) => void
+  /** Opens the consolidated Omnibox settings category. */
+  onOpenSettings: () => void
 }
 
 /** The host a panel row names, without the scheme or a trailing slash. */
@@ -39,7 +41,8 @@ export function SiteProtectionPanel({
   busy,
   onToggleSiteProtection,
   onClearSiteData,
-  onLevelChange
+  onLevelChange,
+  onOpenSettings
 }: SiteProtectionPanelProps) {
   const host = displayHost(url)
   const exempt = protection.allowedSites.includes(host.toLowerCase())
@@ -157,6 +160,23 @@ export function SiteProtectionPanel({
           })}
         </div>
         <p className="mt-2 text-[10px] leading-4 text-ink-500">{LOCAL_ONLY_GUARANTEE}</p>
+      </div>
+
+      <div className="border-t border-[var(--devlens-hairline)] py-1">
+        <button
+          type="button"
+          role="menuitem"
+          aria-label="Omnibox settings"
+          data-testid="site-panel-settings"
+          onClick={onOpenSettings}
+          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.04]"
+        >
+          <SlidersHorizontal size={13} className="shrink-0 text-ink-500" />
+          <span className="min-w-0 flex-1 text-[11px] text-ink-200">Omnibox settings</span>
+          <span className="shrink-0 font-mono text-[9px] text-ink-600">
+            devlens:settings/search
+          </span>
+        </button>
       </div>
     </div>
   )

@@ -134,6 +134,16 @@ export function historyClear(): void {
   scheduleSave()
 }
 
+/** Drops visits older than a retention window and returns how many records remain. */
+export function historyPrune(days: number): number {
+  load()
+  const safeDays = Math.min(3650, Math.max(1, Math.round(days)))
+  const cutoff = Date.now() - safeDays * 24 * 60 * 60 * 1000
+  entries = entries.filter((entry) => entry.lastVisitedAt >= cutoff)
+  scheduleSave()
+  return entries.length
+}
+
 function normalise(url: string): string | null {
   const trimmed = url.trim()
   if (!trimmed) return null

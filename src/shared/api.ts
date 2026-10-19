@@ -42,6 +42,14 @@ import type { ProtectionLevel } from './protection'
 import type { PrivateTabState } from './private-tab'
 import type { ProfilePreferences } from './preferences'
 import type { OmniboxSettings } from './omnibox-settings'
+import type {
+  LaunchpadSession,
+  LaunchpadSystemState,
+  LaunchpadWeather
+} from './launchpad'
+import type { ProfileDiskUsage, ShieldRules } from './privacy'
+import type { AppIconStyle, ContentThemeMode } from './appearance'
+import type { LanguagePreferences } from './languages'
 
 export type Unsubscribe = () => void
 
@@ -94,6 +102,14 @@ export interface DevLensApi {
   pageCommand(input: { webContentsId: number; command: PageCommandKind }): Promise<boolean>
   /** The guest's current zoom, as a whole percentage; 100 means default. */
   pageZoom(webContentsId: number): Promise<number>
+  /** Nudges the guest's logarithmic zoom level and returns the resulting percentage. */
+  pageZoomBy(webContentsId: number, delta: number): Promise<number>
+  /** Sets the guest's zoom from a whole percentage and returns the value actually applied. */
+  pageZoomSet(webContentsId: number, percent: number): Promise<number>
+  /** A guest pressed Ctrl/Cmd+F while its page owned focus. */
+  onFindInPageRequested(
+    listener: (request: { webContentsId: number }) => void
+  ): Unsubscribe
 
   /* Omnibox */
   historyList(limit?: number): Promise<HistoryEntry[]>
@@ -103,6 +119,8 @@ export interface DevLensApi {
    */
   historyAdd(entry: { url: string; title: string; private?: boolean; tabId?: string }): void
   historyClear(): Promise<void>
+  /** Keeps only visits inside the selected number of days and returns the remaining count. */
+  historyPrune(days: number): Promise<number>
   bookmarksList(): Promise<BookmarkEntry[]>
   /** The whole store: the flat list, the bar tree and the bar's preferences. */
   bookmarksSnapshot(): Promise<BookmarkSnapshot>
@@ -177,9 +195,33 @@ export interface DevLensApi {
   preferencesState(): Promise<ProfilePreferences>
   preferencesSet(patch: Partial<ProfilePreferences>): Promise<ProfilePreferences>
   onPreferencesChanged(listener: (preferences: ProfilePreferences) => void): Unsubscribe
+  protectionSetShieldRules(rules: ShieldRules): Promise<ProtectionState>
+  privacyApplyNetwork(input: {
+    dnsMode: 'system' | 'secure' | 'off'
+  }): Promise<{ dnsMode: string }>
+  privacyDiskUsage(): Promise<ProfileDiskUsage>
+  appearanceApplyTheme(mode: ContentThemeMode): Promise<ContentThemeMode>
+  appearanceSetAppIcon(style: AppIconStyle): Promise<AppIconStyle>
+  languagesApply(input: Pick<LanguagePreferences, 'spellCheck' | 'spellCheckLanguages'>): Promise<{
+    spellCheck: boolean
+    spellCheckLanguages: string[]
+  }>
+  /** OS integration shown by `devlens:settings/home`. */
+  launchpadSystemState(): Promise<LaunchpadSystemState>
+  launchpadSetDefaultBrowser(): Promise<LaunchpadSystemState>
+  launchpadSetLaunchAtLogin(enabled: boolean): Promise<LaunchpadSystemState>
+  /** Persists the restorable tab list in the profile's preference store. */
+  launchpadSaveSession(session: LaunchpadSession): Promise<LaunchpadSession>
+  /** Opens an image picker and returns a bounded data URL for the Launchpad wallpaper. */
+  launchpadPickWallpaper(): Promise<{
+    ok: boolean
+    dataUrl: string | null
+    error: string | null
+  }>
+  launchpadWeather(place: string): Promise<LaunchpadWeather>
   /**
-   * The omnibox control panel at `devlens:settings/omnibox`: the same per-profile store the
-   * preferences channels reach, named after the page that owns it.
+   * The omnibox store used by `devlens:settings/search`: the same per-profile preferences the
+   * general settings page reaches.
    */
   omniboxSettingsGet(): Promise<OmniboxSettings>
   omniboxSettingsSet(settings: OmniboxSettings): Promise<OmniboxSettings>

@@ -31,7 +31,7 @@ import {
   type SuggestionIcon
 } from '@shared/omnibox'
 import type { DefaultEngineRef, OmniboxEntry } from '@shared/omnibox-settings'
-import { internalRouteLabel, internalRouteOf, internalRouteUrl } from '@shared/routes'
+import { internalRouteLabel, internalRouteOf, settingsCategoryUrl } from '@shared/routes'
 import { IconButton } from '@renderer/components/IconButton'
 import { DevLensMark } from '@renderer/components/DevLensMark'
 import { FaviconMark, MARK_BOX, PrefixMark } from '@renderer/components/PrefixIcons'
@@ -133,7 +133,7 @@ const MENU_SECTIONS: { id: string; label: string; hint: string; icon: typeof Glo
   {
     id: 'settings',
     label: 'Settings',
-    hint: 'devlens:settings/omnibox',
+    hint: 'devlens:settings/search',
     icon: SlidersHorizontal
   }
 ]
@@ -344,7 +344,7 @@ export function Omnibox({
   }
 
   /**
-   * The gear opens the full settings page, not a local popover and not a command prefix. The
+   * The gear opens Omnibox settings, not a local popover and not a command prefix. The
    * internal router owns tab creation and deduplication, so this row has one destination whether
    * the control centre is already open or not.
    */
@@ -355,9 +355,9 @@ export function Omnibox({
     onRun(
       {
         kind: 'internal',
-        route: 'omnibox-settings',
-        url: internalRouteUrl('omnibox-settings'),
-        label: internalRouteLabel('omnibox-settings')
+        route: 'settings',
+        url: settingsCategoryUrl('search'),
+        label: 'Omnibox settings'
       },
       value
     )
@@ -388,6 +388,10 @@ export function Omnibox({
     siteUrl.length > 0 && siteUrl !== 'about:blank' && !siteUrl.startsWith('devlens://')
   const siteMenu = siteLoaded && protection
   const internal = useMemo(() => internalRouteOf(internalUrl), [internalUrl])
+  /** Internal pages have no search/action switcher, so leaving one closes any open menu. */
+  useEffect(() => {
+    if (internal) setMenuOpen(false)
+  }, [internal])
   /**
    * A loaded page owns the leading slot only while the field is at rest and still mirrors that
    * page. Focusing it, typing a query or clearing it means the operator is ready to search, so
@@ -551,6 +555,8 @@ export function Omnibox({
       {/* Leading slot: the loaded site at rest, the default engine when the field is ready to
           search, the brand logo once a prefix is recognised, and the trigger for the engine /
           navigation menu. One fixed shape, so nothing shifts. */}
+      {!internal && (
+        <>
       <button
         type="button"
         data-testid={id('omnibox-leading')}
@@ -647,6 +653,7 @@ export function Omnibox({
                 setMenuOpen(false)
               }}
               onLevelChange={(level) => onProtectionLevel?.(level)}
+              onOpenSettings={openSettingsCenter}
             />
           ) : (
             <>
@@ -732,6 +739,8 @@ export function Omnibox({
             </>
           )}
         </div>
+      )}
+        </>
       )}
 
       <input

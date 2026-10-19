@@ -45,6 +45,14 @@ import type { ProtectionLevel } from '../shared/protection'
 import type { PrivateTabState } from '../shared/private-tab'
 import type { ProfilePreferences } from '../shared/preferences'
 import type { OmniboxSettings } from '../shared/omnibox-settings'
+import type {
+  LaunchpadSession,
+  LaunchpadSystemState,
+  LaunchpadWeather
+} from '../shared/launchpad'
+import type { ProfileDiskUsage, ShieldRules } from '../shared/privacy'
+import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
+import type { LanguagePreferences } from '../shared/languages'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): Unsubscribe {
   const handler = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
@@ -138,6 +146,13 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.pageCommand, input),
   pageZoom: (webContentsId: number): Promise<number> =>
     ipcRenderer.invoke(IPC.pageZoom, webContentsId),
+  pageZoomBy: (webContentsId: number, delta: number): Promise<number> =>
+    ipcRenderer.invoke(IPC.pageZoomBy, webContentsId, delta),
+  pageZoomSet: (webContentsId: number, percent: number): Promise<number> =>
+    ipcRenderer.invoke(IPC.pageZoomSet, webContentsId, percent),
+  onFindInPageRequested: (
+    listener: (request: { webContentsId: number }) => void
+  ): Unsubscribe => subscribe(IPC.findInPageRequested, listener),
 
   /* ---------------- Omnibox ---------------- */
 
@@ -147,6 +162,7 @@ const api: DevLensApi = {
     ipcRenderer.send(IPC.historyAdd, entry),
 
   historyClear: (): Promise<void> => ipcRenderer.invoke(IPC.historyClear),
+  historyPrune: (days: number): Promise<number> => ipcRenderer.invoke(IPC.historyPrune, days),
 
   /** Saved pages: local only, ranked together with history in the omnibox. */
   bookmarksList: (): Promise<BookmarkEntry[]> => ipcRenderer.invoke(IPC.bookmarksList),
@@ -216,6 +232,35 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.preferencesSet, patch),
   onPreferencesChanged: (listener: (preferences: ProfilePreferences) => void): Unsubscribe =>
     subscribe(IPC.preferencesChanged, listener),
+  protectionSetShieldRules: (rules: ShieldRules): Promise<ProtectionState> =>
+    ipcRenderer.invoke(IPC.protectionSetShieldRules, rules),
+  privacyApplyNetwork: (input: {
+    dnsMode: 'system' | 'secure' | 'off'
+  }): Promise<{ dnsMode: string }> => ipcRenderer.invoke(IPC.privacyApplyNetwork, input),
+  privacyDiskUsage: (): Promise<ProfileDiskUsage> => ipcRenderer.invoke(IPC.privacyDiskUsage),
+  appearanceApplyTheme: (mode: ContentThemeMode): Promise<ContentThemeMode> =>
+    ipcRenderer.invoke(IPC.appearanceApplyTheme, mode),
+  appearanceSetAppIcon: (style: AppIconStyle): Promise<AppIconStyle> =>
+    ipcRenderer.invoke(IPC.appearanceSetAppIcon, style),
+  languagesApply: (
+    input: Pick<LanguagePreferences, 'spellCheck' | 'spellCheckLanguages'>
+  ): Promise<{ spellCheck: boolean; spellCheckLanguages: string[] }> =>
+    ipcRenderer.invoke(IPC.languagesApply, input),
+  launchpadSystemState: (): Promise<LaunchpadSystemState> =>
+    ipcRenderer.invoke(IPC.launchpadSystemState),
+  launchpadSetDefaultBrowser: (): Promise<LaunchpadSystemState> =>
+    ipcRenderer.invoke(IPC.launchpadSetDefaultBrowser),
+  launchpadSetLaunchAtLogin: (enabled: boolean): Promise<LaunchpadSystemState> =>
+    ipcRenderer.invoke(IPC.launchpadSetLaunchAtLogin, enabled),
+  launchpadSaveSession: (session: LaunchpadSession): Promise<LaunchpadSession> =>
+    ipcRenderer.invoke(IPC.launchpadSaveSession, session),
+  launchpadPickWallpaper: (): Promise<{
+    ok: boolean
+    dataUrl: string | null
+    error: string | null
+  }> => ipcRenderer.invoke(IPC.launchpadPickWallpaper),
+  launchpadWeather: (place: string): Promise<LaunchpadWeather> =>
+    ipcRenderer.invoke(IPC.launchpadWeather, place),
 
   /* The omnibox control panel: the same store, addressed by the page's own route. */
   omniboxSettingsGet: (): Promise<OmniboxSettings> => ipcRenderer.invoke(IPC.omniboxSettingsGet),

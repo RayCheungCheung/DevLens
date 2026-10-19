@@ -74,6 +74,103 @@
   --devlens-glow: transparent;
 }
 
+/* Workspace themes recolor chrome without touching the website content preference. */
+[data-workspace-theme='midnight'] {
+  --devlens-accent: #8b9cff;
+  --devlens-accent-soft: rgba(139, 156, 255, 0.14);
+  --devlens-accent-line: rgba(139, 156, 255, 0.36);
+  --devlens-glow: rgba(139, 156, 255, 0.2);
+  --devlens-glass: rgba(10, 12, 26, 0.84);
+  --devlens-tab: rgba(139, 156, 255, 0.055);
+  --devlens-tab-active: #11152a;
+}
+
+[data-workspace-theme='ocean'] {
+  --devlens-accent: #38e8ff;
+  --devlens-accent-soft: rgba(56, 232, 255, 0.12);
+  --devlens-accent-line: rgba(56, 232, 255, 0.34);
+  --devlens-glow: rgba(56, 232, 255, 0.18);
+  --devlens-glass: rgba(5, 17, 22, 0.84);
+  --devlens-tab: rgba(56, 232, 255, 0.045);
+  --devlens-tab-active: #0a1c23;
+}
+
+[data-workspace-theme='ember'] {
+  --devlens-accent: #ffb44a;
+  --devlens-accent-soft: rgba(255, 180, 74, 0.12);
+  --devlens-accent-line: rgba(255, 180, 74, 0.34);
+  --devlens-glow: rgba(255, 180, 74, 0.17);
+  --devlens-glass: rgba(20, 14, 10, 0.84);
+  --devlens-tab: rgba(255, 180, 74, 0.05);
+  --devlens-tab-active: #20160f;
+}
+
+/* Light mode swaps the shared ink tokens so every shell surface flips together. */
+[data-content-theme='light'] {
+  --color-ink-950: #f4f7fb;
+  --color-ink-900: #ffffff;
+  --color-ink-850: #f9fbfd;
+  --color-ink-800: #eef3f9;
+  --color-ink-750: #e3ebf4;
+  --color-ink-700: #d5dfeb;
+  --color-ink-600: #aebdcd;
+  --color-ink-500: #68778c;
+  --color-ink-400: #4c5c71;
+  --color-ink-300: #35465d;
+  --color-ink-200: #203047;
+  --color-ink-100: #0f1b2d;
+  --devlens-hairline: rgba(20, 38, 62, 0.12);
+  --devlens-hairline-strong: rgba(20, 38, 62, 0.2);
+  --devlens-glass: rgba(248, 251, 255, 0.88);
+  --devlens-tab: rgba(20, 38, 62, 0.045);
+  --devlens-tab-active: #ffffff;
+  --devlens-shadow: 0 18px 40px -24px rgba(33, 55, 84, 0.28);
+}
+
+[data-content-theme='light'] .nova-card {
+  background-color: rgba(255, 255, 255, 0.72);
+}
+
+[data-content-theme='light'] .nova-field {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+[data-content-theme='light'] ::-webkit-scrollbar-thumb {
+  background: #b9c6d6;
+  background-clip: content-box;
+}
+
+[data-content-theme='light'] ::selection {
+  background: color-mix(in srgb, var(--devlens-accent) 28%, transparent);
+}
+
+/* Density changes the physical controls, not just a label in Settings. */
+[data-density='compact'] header.nova-glass {
+  height: 2.5rem;
+}
+
+[data-density='compact'] .nova-tab {
+  min-height: 26px;
+  border-radius: 8px 8px 0 0;
+}
+
+[data-density='compact'] .nova-card {
+  border-radius: 6px;
+}
+
+[data-density='touch'] header.nova-glass {
+  height: 3.5rem;
+}
+
+[data-density='touch'] .nova-tab {
+  min-height: 40px;
+  border-radius: 10px 10px 0 0;
+}
+
+[data-density='touch'] .nova-field {
+  min-height: 42px;
+}
+
 @layer base {
   html,
   body,

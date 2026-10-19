@@ -14,8 +14,9 @@ npm run dev
 ```
 
 `npm run dev` builds the main process and both preload bridges, starts the Vite dev
-server for the UI shell and launches Electron with hot reload. The two viewports load
-the configured home URL on startup, so nothing else needs to run first.
+server for the UI shell and launches Electron with hot reload. A fresh profile opens
+the DevLens Launchpad by default; New Tab and Homepage targets can be changed under
+`devlens:settings/home`.
 
 | Script | What it does |
 | --- | --- |
@@ -95,8 +96,11 @@ Enter runs the highlighted entry (or whatever the raw text parses to) and Escape
 list.
 
 **Floating page tabs.** Each page gets a detached, rounded-top tab that merges into the
-content frame when active. Close buttons appear on hover, the strip scrolls horizontally once
-the tabs stop fitting, and its trailing `+` is the same new-tab-page action as `Ctrl/Cmd+T`.
+content frame when active. The default strip scrolls horizontally; Appearance/Tabs can
+switch it to a vertical tab rail for wide-screen development. Its trailing `+` is the
+same new-tab-page action as `Ctrl/Cmd+T`. `devlens:settings/tabs` also controls whether
+new links switch immediately or open in the background, whether external links land beside
+the current tab, and whether `Ctrl+Tab` follows MRU order.
 `Alt/⌘/Ctrl+Enter` in the omnibox, and `Alt/⌘/Ctrl`-click or a middle click on a dashboard card,
 open the target in its own tab.
 
@@ -400,11 +404,13 @@ localStorage, and a tab opened from a session-protected portal keeps the login -
 when it does not. Private tabs still override with their own per-tab in-memory partition, and a
 tab opened from one stays private rather than quietly joining the profile's session.
 
-**`devlens:settings/omnibox` — the Omnibox & Engines control panel.** The field's own
-configuration is a full-page tab with two independent ordered lists. Search Engines (`@`) require
-a `%s` query template; Site Shortcuts (`#`) require a fixed target address. Every stored row -
-including the defaults - can be renamed, retriggered, edited, moved up or down, or deleted.
-Duplicate triggers resolve to the first row in the visible order.
+**`devlens:settings/search` — the Omnibox category.** The field's own configuration now lives
+inside the main Settings page, in the category displayed as **Omnibox**. It has two independent
+ordered lists. Search Engines (`@`) require a `%s` query template; Site Shortcuts (`#`) require a
+fixed target address. Every stored row - including the defaults - can be renamed, retriggered,
+edited, moved up or down, or deleted. Duplicate triggers resolve to the first row in the visible
+order. The old `devlens:settings/omnibox` URL is a compatibility alias and canonicalizes to
+`devlens:settings/search`.
 
 The list order is the display and evaluation order. The dropdown's `@` and `#` cheat sheets are
 generated from the stored arrays, so changing the order in Settings changes which row is offered
@@ -442,8 +448,8 @@ page is loaded:
 
 | On screen | The caret opens |
 | --- | --- |
-| The dashboard / new tab page / nothing loaded | the **search & navigation menu**: *Search with* DuckDuckGo, Perplexity, Brave, Wikipedia, Bing or Google (with logos and tokens), and *Go to* Bookmarks, Tabs (`%`), History, Actions (`>`) and Settings (`devlens:settings/omnibox`) |
-| Any loaded website | the **site protection panel**: the domain and whether the connection is secure, the guard badge with the request count, a per-site switch for enhanced tracking protection, "clear cookies & site data" for that origin, and the privacy level for the session |
+| The dashboard / new tab page / nothing loaded | the **search & navigation menu**: *Search with* DuckDuckGo, Perplexity, Brave, Wikipedia, Bing or Google (with logos and tokens), and *Go to* Bookmarks, Tabs (`%`), History, Actions (`>`) and Settings (`devlens:settings/search`) |
+| Any loaded website | the **site protection panel**: the domain and whether the connection is secure, the guard badge with the request count, a per-site switch for enhanced tracking protection, "clear cookies & site data" for that origin, the privacy level for the session, and a shortcut into Omnibox settings |
 
 Choosing an engine rewrites only the prefix - `@g react hooks` becomes `@w react hooks`, the query
 stays where it was, and the leading mark follows. The per-site switch is the narrowest privacy
@@ -560,6 +566,100 @@ storage never touch disk, the session cannot outlive itself.
 **Sandbox window.** `:sandbox` opens the target in its own window on a separate in-memory
 partition with no preload and no DevLens bridge at all, so the page sees plain Chromium.
 
+## Settings and profile preferences
+
+Settings is a Firefox-style internal tab: categories on the left, one focused panel on the
+right, and a URL that names the selected category. Opening main-menu Settings focuses the
+existing Settings tab rather than creating another form.
+
+| Route | Category |
+| --- | --- |
+| `devlens:settings/home` | Launchpad: startup, targets, widgets, activity and wallpaper |
+| `devlens:settings/search` | Omnibox: default engine, engines, shortcuts and suggestions |
+| `devlens:settings/privacy` | DevLens Shield, data, retention, DNS and protocols |
+| `devlens:settings/appearance` | Content theme, workspace theme, app icon and density |
+| `devlens:settings/themes` | Extended DevLens workspace theme gallery |
+| `devlens:settings/tabs` | Tab layout, interaction, containers, media and hardware |
+| `devlens:settings/developer` | AI provider and developer workspace information |
+| `devlens:settings/identity` | Profile and startup identity prompt |
+| `devlens:settings/languages` | Interface, web content, translation and spell check |
+
+`devlens:settings` redirects to the home category. `devlens:settings/omnibox` is retained as
+an alias for the consolidated Omnibox category. Internal routes do not render the omnibox
+search/action switcher; it returns on ordinary web pages.
+
+### Preference store
+
+UI preferences are stored per profile in
+`<userData>/profiles/<profileId>/preferences.json`. The persisted groups are:
+
+- `aiProvider`
+- `omnibox`
+- `toolbar`
+- `mobile`
+- `browser`
+- `launchpad`
+- `privacy`
+- `appearance`
+- `tabs`
+- `languages`
+
+Active mode, protection counters and transient find state remain session state; profile-level
+choices that should survive a restart are written through `preferencesSet`.
+
+### Launchpad
+
+`devlens:settings/home` configures the start surface:
+
+- New Tab and Homepage targets: Launchpad, Blank Canvas or Custom URL.
+- Launch at login and restore-last-tabs behavior.
+- Default-browser detection and OS registration.
+- Widget switches for clocks, developer spotlight, quick snippets, system health, weather and
+  the focus timer.
+- Recent/bookmark/download activity shelves.
+- A local wallpaper stored as a bounded data URL with a dim control.
+
+The last non-private tab set is written to the profile store and restored when enabled.
+
+### Shield and privacy
+
+`devlens:settings/privacy` exposes the live Shield state and session counters, Standard/Strict
+modes, granular tracker categories, site storage exceptions, real profile disk usage, browsing
+data clearing, history retention, DNT/GPC, DoH and HTTPS-only navigation. Shield rules are sent
+to the main-process protection engine; DoH is applied through Electron's host resolver.
+
+The Network Tunnel card reports its configuration and data limit. No VPN relay is bundled, so
+the card stays in standby until one is configured rather than pretending to be connected.
+
+### Visuals and themes
+
+`devlens:settings/appearance` controls:
+
+- Website color scheme through `nativeTheme`: Follow System, Light or Dark.
+- DevLens workspace themes. Light/Dark changes the full shell token set; workspace themes
+  recolor toolbars, tabs, sidebars and dashboard chrome.
+- Generated taskbar/window and macOS Dock icon styles.
+- Automatic, Standard, Compact or Touch UI density.
+- Direct links to page zoom, Launchpad and Dock/Sidebar layout controls.
+
+`devlens:settings/themes` is the larger theme gallery reached from Appearance.
+
+### Tabs and browsing
+
+Horizontal and Vertical Tabs are real layouts. The active behaviors currently wired to the
+shell include immediate/background opening, opening external-page tabs beside the current tab,
+and MRU-based `Ctrl+Tab`. Environment containers, hover/taskbar previews, smart page cursor,
+link preview, custom hotkeys, PiP/DRM and hardware acceleration are persisted controls for
+their corresponding runtime integrations.
+
+### Languages and localization
+
+`devlens:settings/languages` stores primary/fallback UI languages, formatting locale, ordered
+web-content language preferences, local translation controls, offline model installation state
+and developer spell-check languages. The primary language updates the shell document locale,
+and spell-check settings are applied to the active profile's Electron session. No on-device
+neural translation model is bundled yet.
+
 ## WImH - extreme defense mode
 
 Built for a host you no longer trust: the sidebar's shield tool (or `>defense`) toggles a mode
@@ -599,11 +699,12 @@ than observation:
 - In dev mode the overlay is just a second way in: capture is already on for the session, and
   closing the panel does not throw away what the session collected.
 
-## New tab dashboard
+## Launchpad
 
-The `+` button in the strip (or `Ctrl/Cmd+T`) opens a start page in the new tab; any navigation
+The `+` button in the strip (or `Ctrl/Cmd+T`) opens the Launchpad by default; any navigation
 returns to the viewports, and because it is the *page of an empty tab* rather than an overlay,
-the tabs around it keep running untouched.
+the tabs around it keep running untouched. Settings may instead target a Blank Canvas or a
+custom URL, and may restore the last non-private tab set on launch.
 
 **The hero field is the omnibox.** The front page mounts the same component as the toolbar,
 sharing one value, one router and one set of suggestions - so prefixes, engines, `:port`,
@@ -618,6 +719,10 @@ the main process as a data URL.
 | Widget | What it does |
 | --- | --- |
 | World clocks | Macao, Tokyo, London and San Francisco, live via `Intl` (so the two that observe DST stay right all year) |
+| Dev spotlight | A rotating developer quote; a chosen Launchpad wallpaper becomes the photo behind it |
+| Quick snippets | A local command shelf with copy/remove controls, stored per profile |
+| System health | CPU threads, device memory, JS heap and current session request/error/tracker counters |
+| Weather | Main-process weather lookup using Open-Meteo; failures show an unavailable state |
 | Focus timer | 25-minute focus and 5-minute break rounds with start/pause, reset and a phase switch. It hands over to the other round at zero and waits to be started again; the round counter is session-only |
 | Checklist | A local task list: add, tick, remove, clear the done ones. Stored with `localStorage` under `devlens.checklist.<profileId>`, because the shell's own storage is shared between profiles - a task written while using "Work" should not be waiting in "Personal" |
 | Local servers | Probes the ports dev tooling actually binds to (Vite, Next, CRA, Angular, Storybook, Jupyter, plus the usual Docker-published databases and brokers), reads the `Server` header and the page title, and lists every one that answered. Servers pinned in `ntp.servers` come first. Clicking a card opens it in both viewports |
@@ -627,26 +732,16 @@ the main process as a data URL.
 
 The grid is measured with container queries rather than window breakpoints: the pane narrows when
 the developer sidebar opens, and the cards answer to the pane. Normal mode drops the developer
-cards entirely and keeps the local-first utilities.
-
-- **Local servers** - probes the ports dev tooling actually binds to (Vite, Next, CRA,
-  Angular, Storybook, Jupyter, plus the usual Docker-published databases and brokers), reads
-  the `Server` header and the page title, and lists what answered. Servers pinned in
-  `ntp.servers` come first. Clicking a card opens it in both viewports.
-- **Workspaces** - an MRU list with the package name and the framework that owns the dev
-  server. Add a folder (dialog or path), set any entry active, and click-to-source plus
-  "Open in VS Code" resolve inside it immediately. An explicit `workspaceRoot` or
-  `DEVLENS_WORKSPACE_ROOT` always wins over the remembered active entry.
-- **Omni-prefix cheat sheet** - generated from the same tables the parser uses, so it cannot
-  drift. Clicking an entry closes the dashboard and drops that prefix into the omnibox.
-- **Live counters** - requests captured, failures, console errors and blocked trackers for the
-  session you just had.
+cards entirely and keeps the local-first utilities. Widget visibility, activity shelves and the
+Launchpad wallpaper are configured under `devlens:settings/home`.
 
 ## Project Nova styling
 
-The shell is one palette with two moods. `src/renderer/src/styles/index.css` defines the
-`--devlens-*` tokens on top of a `@theme` surface ramp (`ink-950` … `ink-100`), and only the
-accent changes between modes:
+`src/renderer/src/styles/index.css` defines the `--devlens-*` tokens on top of a `@theme`
+surface ramp (`ink-950` … `ink-100`). Workspace mode changes the accent; Appearance can also
+switch the full content theme between light and dark, apply a workspace chrome theme, and set
+Automatic/Standard/Compact/Touch density. The security lock-down remains in
+`src/shared/mode.ts` rather than CSS.
 
 The browser shell stays compact at standard sizing: 12px omnibox type, 11px tab titles, a
 36px tab strip, and 32px toolbar controls. Typography comfort is isolated to the settings
@@ -658,13 +753,12 @@ readable. `MARK_BOX` stays a fixed square at every width.
 | --- | --- | --- |
 | `--devlens-accent` | muted slate | lime |
 | `--devlens-glow` | transparent (no bloom) | soft lime |
-| `--devlens-glass`, `--devlens-hairline`, `--devlens-tab`, `--devlens-shadow` | shared | shared |
+| `--devlens-glass`, `--devlens-hairline`, `--devlens-tab`, `--devlens-shadow` | shared, then overridden by the selected theme | shared, then overridden by the selected theme |
 
 Component classes read those tokens - `nova-glass` for the toolbar, sidebar rail and status bar,
 `nova-tab` for the floating tabs, `nova-field` for the omnibox focus ring, `nova-card` for
 dashboard and workspace cards, `nova-label` for section headings - so a mode switch restyles the
-whole shell without touching a single security gate. The lock-down rules live in
-`src/shared/mode.ts`, not in the CSS.
+whole shell without touching a single security gate.
 
 ## Configuration
 
@@ -703,9 +797,10 @@ whole shell without touching a single security gate. The lock-down rules live in
 }
 ```
 
-`homeUrl` is optional and blank by default: DevLens starts on the new tab dashboard and mounts
-no page until something is opened. Set it (or export `DEVLENS_HOME_URL`) to land on a page
-instead, which is what the automated suites do.
+`homeUrl` remains an optional bootstrap/config value used by external scripts and as a
+defensive fallback for WImH targets. Profile startup is controlled by the Homepage target in
+`devlens:settings/home`; a fresh profile starts on the Launchpad, Blank Canvas or its custom
+URL according to that preference.
 
 - `workspaceRoot` - the project the previews belong to; relative paths resolve against the config file.
 - `ide.scheme` - any VS Code compatible editor: `vscode`, `cursor`, `windsurf`, ...
@@ -713,7 +808,8 @@ instead, which is what the automated suites do.
   - `ghost.blockTrackers` - set to `false` to keep ghost mode isolated without the blocklist.
   - `wimh.startActive` - engage extreme defense mode on launch (also `DEVLENS_WIMH=1`).
   - `wimh.clipboard.clearAfterMs` - clipboard purge delay (`DEVLENS_CLIPBOARD_TTL_MS`).
-  - `ntp.openOnStart` - open the dashboard instead of the home URL (`DEVLENS_NTP_ON_START=1`).
+  - `ntp.openOnStart` - legacy bootstrap hint; profile Launchpad/Homepage targets take
+    precedence for the actual startup surface.
   - `mode.default` - `dev` (default) or `normal` to start as a clean browser (`DEVLENS_MODE`).
 - Blank values are treated as "not configured", so the defaults still apply.
 - Environment overrides for scripted runs: `DEVLENS_HOME_URL`, `DEVLENS_WORKSPACE_ROOT`,
@@ -760,6 +856,8 @@ src/
     output.ts    text exports (save dialog or configured directory) and the clipboard
     ide.ts       editor URI composition and URL -> file resolution
     config.ts    devlens.config.json loader with env overrides
+    preferences.ts per-profile preference file, validation and migration
+    app-icons.ts generated taskbar / Dock icon styles
   preload/     Trusted bridges (CommonJS, sandbox safe)
     index.ts     window.devlens: bootstrap, guest registration, IDE calls, log streams
     webview.ts   guest bridge: scroll sync + live design mode
@@ -769,6 +867,10 @@ src/
     src/components/Omnibox.tsx     suggestion dropdown + keyboard contract
     src/components/DefenseOverlay.tsx  the on-demand WImH panel normal mode still offers
     src/components/ProtectionMenu.tsx  the security badge and the level dropdown
+    src/components/SettingsPage.tsx    categorized Settings shell and category panels
+    src/components/OmniboxSettings.tsx embedded engines/shortcuts editor for Omnibox settings
+    src/components/ThemeManagerPage.tsx extended workspace-theme gallery
+    src/components/VerticalTabs.tsx    optional vertical tab rail
     src/components/SiteProtectionPanel.tsx  per-site guard, clear and level (leading slot menu)
     src/components/ProfileGate.tsx     the "who is using DevLens?" startup screen
     src/components/PrefixIcons.tsx     normalised inline brand marks for the omnibox chips
@@ -787,6 +889,13 @@ src/
     report.ts    Markdown / JSON rendering with per-section options
     omnibox.ts   prefix grammar, address/query detection, local ranking, inline completion
     protection.ts the level table, its policies and the local-only guarantee
+    routes.ts    `devlens:` route ids, canonical URLs and settings sub-routes
+    preferences.ts  profile preference contract shared by main and renderer
+    launchpad.ts Launchpad targets, widgets, session and system-integration contracts
+    privacy.ts   Shield, retention, DNS, disk-usage and privacy preferences
+    appearance.ts content theme, workspace theme, app icon and density contracts
+    tabs.ts      tab layout, behavior, containers, hotkeys and media preferences
+    languages.ts interface, web-content, translation and spell-check preferences
     mode.ts      the capability table both processes obey
     clipboard.ts credential classifier shared by the sentinel and the paste guard
 ```
@@ -837,6 +946,13 @@ src/
 | `devlens:protection:get-state` / `protection:set-level` | renderer -> main (invoke) | read or switch the protection level |
 | `devlens:protection:set-site-allowed` | renderer -> main (invoke) | pause/resume cancellation for one site, this session |
 | `devlens:protection:changed` | main -> renderer | the level or its counters changed |
+| `devlens:preferences:state` / `preferences:set` | renderer -> main (invoke) | read or persist the active profile's Settings groups |
+| `devlens:launchpad:system-state` / `set-default-browser` / `set-launch-at-login` | renderer -> main (invoke) | OS integration used by Launchpad |
+| `devlens:launchpad:pick-wallpaper` / `save-session` / `weather` | renderer -> main (invoke) | wallpaper picker, restorable tabs and weather lookup |
+| `devlens:privacy:apply-network` / `disk-usage` | renderer -> main (invoke) | apply DoH and measure profile disk usage |
+| `devlens:history:prune` | renderer -> main (invoke) | enforce a custom history-retention window |
+| `devlens:appearance:apply-theme` / `set-app-icon` | renderer -> main (invoke) | apply content color scheme and generated app icon |
+| `devlens:languages:apply` | renderer -> main (invoke) | apply spell-check settings to the active session |
 | `devlens:session:clear-site` | renderer -> main (invoke) | forget one origin: its cookies and storage |
 | `devlens:inspection:set-open` | renderer -> main (invoke) | open/close the on-demand inspection lease |
 | `devlens:inspection:state` | renderer -> main (invoke) | is this process observing, and from where |

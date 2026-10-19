@@ -68,6 +68,12 @@ export const IPC = {
   pageCommand: 'devlens:page:command',
   /** renderer -> main (invoke): the current zoom level of a guest, for the menu's zoom row. */
   pageZoom: 'devlens:page:zoom',
+  /** renderer -> main (invoke): nudge a guest's logarithmic zoom level. */
+  pageZoomBy: 'devlens:page:zoom-by',
+  /** renderer -> main (invoke): set a guest's zoom as a percentage. */
+  pageZoomSet: 'devlens:page:zoom-set',
+  /** guest -> renderer: Ctrl/Cmd+F was pressed while a page owned focus. */
+  findInPageRequested: 'devlens:find:requested',
 
   /* Omnibox ----------------------------------------------------------- */
   /** renderer -> main (invoke): recent visited pages for suggestions. */
@@ -76,6 +82,8 @@ export const IPC = {
   historyAdd: 'devlens:history:add',
   /** renderer -> main (invoke): forget every visited page. */
   historyClear: 'devlens:history:clear',
+  /** renderer -> main (invoke): prune visits outside a custom retention window. */
+  historyPrune: 'devlens:history:prune',
   /** renderer -> main (invoke): saved pages, for ranking and the dashboard. */
   bookmarksList: 'devlens:bookmarks:list',
   /** renderer -> main (invoke): add or remove a bookmark, returns the new list. */
@@ -108,9 +116,21 @@ export const IPC = {
   preferencesSet: 'devlens:preferences:set',
   /** main -> renderer: a preference changed. */
   preferencesChanged: 'devlens:preferences:changed',
+  /** renderer -> main (invoke): system default-browser and login-item status. */
+  launchpadSystemState: 'devlens:launchpad:system-state',
+  /** renderer -> main (invoke): ask the OS to make DevLens the default browser. */
+  launchpadSetDefaultBrowser: 'devlens:launchpad:set-default-browser',
+  /** renderer -> main (invoke): enable or disable launch at login. */
+  launchpadSetLaunchAtLogin: 'devlens:launchpad:set-launch-at-login',
+  /** renderer -> main (invoke): save the restorable tab session without broadcasting a preference change. */
+  launchpadSaveSession: 'devlens:launchpad:save-session',
+  /** renderer -> main (invoke): choose a local image and return it as a data URL. */
+  launchpadPickWallpaper: 'devlens:launchpad:pick-wallpaper',
+  /** renderer -> main (invoke): local weather lookup through the main process. */
+  launchpadWeather: 'devlens:launchpad:weather',
 
   /**
-   * The omnibox control panel (`devlens:settings/omnibox`).
+   * The omnibox store shown by `devlens:settings/search`.
    *
    * It reads and writes the same per-profile preference file as `preferences*`; the separate
    * channel is the page's own address, so the route, the button that opens it and the panel that
@@ -135,6 +155,12 @@ export const IPC = {
   viewportFold: 'devlens:viewport:fold',
   /** guest -> renderer (sendToHost): what the finder matched. */
   viewportFindResult: 'devlens:viewport:find-result',
+  /** renderer -> guest (webview.send): text search for the built-in Find Bar. */
+  viewportTextFind: 'devlens:viewport:text-find',
+  /** guest -> renderer (sendToHost): text-search count and active match. */
+  viewportTextFindResult: 'devlens:viewport:text-find-result',
+  /** guest -> renderer (sendToHost): Ctrl/Cmd + wheel, forwarded for live page zoom. */
+  viewportZoomWheelResult: 'devlens:viewport:zoom-wheel-result',
   /** renderer -> main (invoke): the site's icon, returned as a data URL. */
   faviconGet: 'devlens:favicon:get',
   /**
@@ -200,8 +226,20 @@ export const IPC = {
   protectionSetLevel: 'devlens:protection:set-level',
   /** renderer -> main (invoke): pause or resume cancellation for one site, this session only. */
   protectionSetSiteAllowed: 'devlens:protection:set-site-allowed',
+  /** renderer -> main (invoke): apply the profile's granular Shield rules. */
+  protectionSetShieldRules: 'devlens:protection:set-shield-rules',
   /** main -> renderer: the level or its counters changed. */
   protectionChanged: 'devlens:protection:changed',
+  /** renderer -> main (invoke): apply DoH mode. */
+  privacyApplyNetwork: 'devlens:privacy:apply-network',
+  /** renderer -> main (invoke): actual disk usage of this profile. */
+  privacyDiskUsage: 'devlens:privacy:disk-usage',
+  /** renderer -> main (invoke): apply website light/dark/system preference. */
+  appearanceApplyTheme: 'devlens:appearance:apply-theme',
+  /** renderer -> main (invoke): apply a generated taskbar/Dock icon style. */
+  appearanceSetAppIcon: 'devlens:appearance:set-app-icon',
+  /** renderer -> main (invoke): apply spell-check settings to the active profile session. */
+  languagesApply: 'devlens:languages:apply',
 
   /* New tab dashboard ------------------------------------------------ */
   /** renderer -> main (invoke): probe well known local dev ports. */
