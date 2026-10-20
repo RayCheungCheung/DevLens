@@ -7,6 +7,7 @@ import {
   Compass,
   Download,
   Globe2,
+  GripVertical,
   House,
   Info,
   LayoutPanelTop,
@@ -279,6 +280,8 @@ export function SettingsPage({
   const [weatherDraft, setWeatherDraft] = useState(launchpad.weatherPlace)
   const [exceptionDraft, setExceptionDraft] = useState('')
   const [webLanguageDraft, setWebLanguageDraft] = useState('zh-CN')
+  const [draggingWebLanguageIndex, setDraggingWebLanguageIndex] = useState(-1)
+  const [dragOverWebLanguageIndex, setDragOverWebLanguageIndex] = useState(-1)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const selectedUiFont =
     INTERFACE_FONTS.find((font) => font.id === appearance.uiFont) ?? INTERFACE_FONTS[0]
@@ -376,12 +379,18 @@ export function SettingsPage({
     onLanguages({ webLanguages: [...languages.webLanguages, webLanguageDraft] })
   }
 
-  const moveWebLanguage = (index: number, direction: -1 | 1): void => {
-    const target = index + direction
-    if (target < 0 || target >= languages.webLanguages.length) return
+  const dropWebLanguage = (from: number, to: number): void => {
+    if (from === to || from < 0 || to < 0) {
+      setDraggingWebLanguageIndex(-1)
+      setDragOverWebLanguageIndex(-1)
+      return
+    }
     const next = [...languages.webLanguages]
-    ;[next[index], next[target]] = [next[target], next[index]]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
     onLanguages({ webLanguages: next })
+    setDraggingWebLanguageIndex(-1)
+    setDragOverWebLanguageIndex(-1)
   }
 
   return (
@@ -1972,7 +1981,46 @@ export function SettingsPage({
               >
                 <ol className="flex flex-col divide-y divide-white/[0.05]">
                   {languages.webLanguages.map((code, index) => (
-                    <li key={code} className="flex items-center gap-2 py-2">
+                    <li
+                      key={code}
+                      data-testid={`languages-web-language-${code}`}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', code)
+                        setDraggingWebLanguageIndex(index)
+                        setDragOverWebLanguageIndex(-1)
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        event.dataTransfer.dropEffect = 'move'
+                        setDragOverWebLanguageIndex(index)
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        dropWebLanguage(draggingWebLanguageIndex, index)
+                      }}
+                      onDragEnd={() => {
+                        setDraggingWebLanguageIndex(-1)
+                        setDragOverWebLanguageIndex(-1)
+                      }}
+                      className={[
+                        'flex items-center gap-2 py-2 transition-opacity',
+                        draggingWebLanguageIndex === index ? 'opacity-40' : '',
+                        dragOverWebLanguageIndex === index
+                          ? 'border-t-2 border-[var(--devlens-accent)]'
+                          : ''
+                      ].join(' ')}
+                    >
+                      <button
+                        type="button"
+                        aria-label={`Drag to reorder ${code}`}
+                        className="shrink-0 cursor-grab rounded p-1 text-ink-500 hover:bg-white/[0.06] hover:text-ink-200 active:cursor-grabbing"
+                      >
+                        <GripVertical size={14} />
+                      </button>
                       <span className="w-5 text-center font-mono text-[9px] text-ink-600">
                         {index + 1}
                       </span>
@@ -1980,24 +2028,6 @@ export function SettingsPage({
                         {LANGUAGE_OPTIONS.find((language) => language.id === code)?.label ?? code}
                       </span>
                       <span className="font-mono text-[9px] text-ink-500">{code}</span>
-                      <button
-                        type="button"
-                        aria-label={`Move ${code} up`}
-                        onClick={() => moveWebLanguage(index, -1)}
-                        disabled={index === 0}
-                        className="h-6 w-6 rounded text-ink-500 hover:bg-white/5 disabled:opacity-30"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Move ${code} down`}
-                        onClick={() => moveWebLanguage(index, 1)}
-                        disabled={index === languages.webLanguages.length - 1}
-                        className="h-6 w-6 rounded text-ink-500 hover:bg-white/5 disabled:opacity-30"
-                      >
-                        ↓
-                      </button>
                       <button
                         type="button"
                         aria-label={`Remove ${code}`}
