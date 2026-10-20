@@ -70,6 +70,10 @@ export const IPC = {
   remoteImageRead: 'devlens:image:read',
   /** renderer -> main (invoke): copy a remote image to the native clipboard. */
   remoteImageCopy: 'devlens:image:copy',
+  /** renderer -> main (invoke): capture the visible guest page to PNG. */
+  pageCapture: 'devlens:page:capture',
+  /** renderer -> main (invoke): open the guest's HTML in a source window. */
+  pageViewSource: 'devlens:page:view-source',
   /** renderer -> main (invoke): copy text to the system clipboard. */
   clipboardWrite: 'devlens:clipboard:write',
   /** renderer -> main (invoke): read the system clipboard, so Paste is only offered when it can work. */
@@ -183,6 +187,8 @@ export const IPC = {
   viewportTextFindResult: 'devlens:viewport:text-find-result',
   /** guest -> renderer (sendToHost): Ctrl/Cmd + wheel, forwarded for live page zoom. */
   viewportZoomWheelResult: 'devlens:viewport:zoom-wheel-result',
+  /** guest -> renderer (sendToHost): a page interaction should dismiss shell menus. */
+  viewportInteraction: 'devlens:viewport:interaction',
   /** renderer -> main (invoke): the site's icon, returned as a data URL. */
   faviconGet: 'devlens:favicon:get',
   /**

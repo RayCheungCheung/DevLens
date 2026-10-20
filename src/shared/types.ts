@@ -541,6 +541,11 @@ export interface RemoteImageResult {
   error: string | null
 }
 
+export interface PageCaptureRequest {
+  webContentsId: number
+  title?: string
+}
+
 /** Page commands the shell's context menu can ask main to run in a guest. */
 export type PageCommandKind =
   | 'copy'

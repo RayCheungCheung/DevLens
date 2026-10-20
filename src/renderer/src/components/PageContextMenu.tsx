@@ -6,10 +6,12 @@ import {
   ArrowRight,
   BookmarkPlus,
   Braces,
+  Camera,
   Code2,
   Copy,
   ExternalLink,
   Eye,
+  FileCode2,
   Ghost,
   Image as ImageIcon,
   Languages,
@@ -40,6 +42,7 @@ export interface PageContextMenuContext {
   canGoForward: boolean
   dev: boolean
   pageUrl: string
+  pageTitle: string
   menuX: number
   menuY: number
 }
@@ -52,6 +55,10 @@ export type PageContextAction =
       mode: 'tab' | 'split' | 'container' | 'window' | 'private' | 'preview'
     }
   | { type: 'bookmark-link'; url: string; title: string }
+  | { type: 'bookmark-page'; url: string; title: string }
+  | { type: 'save-page'; url: string; title: string }
+  | { type: 'screenshot' }
+  | { type: 'view-source' }
   | { type: 'copy-clean-link'; url: string }
   | { type: 'save-link'; url: string }
   | { type: 'save-image'; url: string }
@@ -118,16 +125,6 @@ export function PageContextMenu({
 
   const groups: Row[][] = []
 
-  /* Navigation first: whatever the click landed on, these are the page-level verbs. Each is only
-     present when the frame can actually perform it. */
-  const navigation: Row[] = []
-  if (context.canGoBack) navigation.push(row('back', 'Back', ArrowLeft, () => onCommand('back')))
-  if (context.canGoForward) {
-    navigation.push(row('forward', 'Forward', ArrowRight, () => onCommand('forward')))
-  }
-  navigation.push(row('reload', 'Reload', RotateCw, () => onCommand('reload')))
-  groups.push(navigation)
-
   /* Editing: Copy and Cut exist because something is selected; Paste exists because the target
      takes text *and* the clipboard has some. Nothing here is ever greyed out. */
   const editing: Row[] = []
@@ -136,10 +133,22 @@ export function PageContextMenu({
     if (payload.editable) editing.push(row('cut', 'Cut', Scissors, () => onCommand('cut')))
   }
   if (canPaste) editing.push(row('paste', 'Paste', ClipboardPaste, () => onCommand('paste')))
-  editing.push(
-    row('select-all', 'Select All', MousePointerClick, () => onCommand('select-all'), true)
-  )
   groups.push(editing)
+
+  const pageOperations: Row[] = [
+    row('save-page', 'Save Page As...', Save, () =>
+      onAction({ type: 'save-page', url: context.pageUrl, title: context.pageTitle })
+    ),
+    row('select-all', 'Select All', MousePointerClick, () => onCommand('select-all')),
+    row('screenshot', 'Take Screenshot', Camera, () => onAction({ type: 'screenshot' })),
+    row('ask-ai-page', 'Ask AI Assistant', Sparkles, () =>
+      onAction({ type: 'ask-ai', url: context.pageUrl, title: context.pageTitle }),
+      false,
+      'Z'
+    ),
+    row('view-source', 'View Page Source', FileCode2, () => onAction({ type: 'view-source' }))
+  ]
+  groups.push(pageOperations)
 
   /* The target's own affordances: a link offers link actions, media offers media actions, and a
      right-click on plain text offers neither because neither would apply. */
@@ -254,7 +263,7 @@ export function PageContextMenu({
   if (payload.linkUrl || payload.mediaUrl) {
     const askUrl = payload.linkUrl ?? payload.mediaUrl!
     intelligence.push(
-      row('ask-ai', 'Ask AI Assistant', Sparkles, () =>
+      row('ask-ai-link', 'Ask AI about Link', Sparkles, () =>
         onAction({
           type: 'ask-ai',
           url: askUrl,
@@ -317,6 +326,36 @@ export function PageContextMenu({
       }}
       className="fixed z-[85] max-h-[70vh] w-[330px] overflow-y-auto rounded-xl border border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-950)_97%,transparent)] py-1 shadow-2xl"
     >
+      <div className="mx-1.5 mb-1 flex items-center gap-1 border-b border-[var(--devlens-hairline)] px-1 pb-1.5">
+        {([
+          ['back', 'Back', ArrowLeft, context.canGoBack, () => onCommand('back')],
+          ['forward', 'Forward', ArrowRight, context.canGoForward, () => onCommand('forward')],
+          ['reload', 'Reload', RotateCw, true, () => onCommand('reload')],
+          [
+            'bookmark-page',
+            'Bookmark Page',
+            BookmarkPlus,
+            Boolean(context.pageUrl),
+            () => onAction({ type: 'bookmark-page', url: context.pageUrl, title: context.pageTitle })
+          ]
+        ] as const).map(([key, label, Icon, enabled, run]) => (
+          <button
+            key={key}
+            type="button"
+            aria-label={label}
+            title={label}
+            data-testid={`page-menu-nav-${key}`}
+            disabled={!enabled}
+            onClick={() => {
+              run()
+              onClose()
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Icon size={15} />
+          </button>
+        ))}
+      </div>
       {groups
         .filter((group) => group.length > 0)
         .map((group, index) => (

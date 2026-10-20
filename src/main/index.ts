@@ -45,6 +45,7 @@ import type {
   RemoteFileRequest,
   GuestInspectRequest,
   GuestInspectResult,
+  PageCaptureRequest,
   SessionProfileId,
   WimhState,
   WorkspaceEntry,
@@ -124,7 +125,13 @@ import {
   setRules
 } from './interceptor'
 import { saveTextFile, writeClipboard } from './output'
-import { copyRemoteImage, readRemoteImage, saveRemoteFile } from './context-assets'
+import {
+  copyRemoteImage,
+  openSourceWindow,
+  readRemoteImage,
+  savePageCapture,
+  saveRemoteFile
+} from './context-assets'
 import {
   flushPreferences,
   preferencesNow,
@@ -401,6 +408,24 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.remoteImageRead, (_event, url: string) => readRemoteImage(String(url ?? '')))
   ipcMain.handle(IPC.remoteImageCopy, (_event, url: string) => copyRemoteImage(String(url ?? '')))
+  ipcMain.handle(IPC.pageCapture, (_event, request: PageCaptureRequest) =>
+    savePageCapture(request, config)
+  )
+  ipcMain.handle(IPC.pageViewSource, async (_event, id: number) => {
+    const target = id ? webContents.fromId(id) : null
+    if (!target || target.isDestroyed()) {
+      return { ok: false, error: 'That page is no longer open.' }
+    }
+    try {
+      const source = await target.executeJavaScript('document.documentElement.outerHTML')
+      return openSourceWindow(String(source ?? ''), target.getURL())
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
 
   // Every DevLens clipboard write goes past the sentinel while extreme mode is on.
   ipcMain.handle(IPC.clipboardWrite, (_event, text: string) => {

@@ -634,6 +634,7 @@ export function App() {
     (PageContextMenuPayload & {
       clipboard: string
       guestId: number | null
+      tabId: string
       menuX: number
       menuY: number
     }) | null
@@ -1910,6 +1911,7 @@ export function App() {
             viewId,
             clipboard,
             guestId,
+            tabId,
             menuX: (bounds?.left ?? 0) + payload.x,
             menuY: (bounds?.top ?? 0) + payload.y
           })
@@ -1967,9 +1969,64 @@ export function App() {
             )
           return
         case 'bookmark-link':
+        case 'bookmark-page':
           setBookmarkEditor({
             url: action.url,
             title: action.title || hostOf(action.url)
+          })
+          return
+        case 'save-page': {
+          const frame = pageMenu
+            ? frames.current[pageMenu.tabId]?.[pageMenu.viewId]
+            : null
+          if (!frame) {
+            showStatus('that page is no longer open')
+            return
+          }
+          void frame
+            .evaluate('document.documentElement.outerHTML')
+            .then((source) =>
+              window.devlens.saveTextFile({
+                filename: suggestedFileName(action.url, '.html'),
+                content: String(source ?? ''),
+                title: 'Save page from DevLens'
+              })
+            )
+            .then((result) => {
+              if (result.cancelled) return
+              showStatus(
+                result.ok ? `page saved to ${result.path}` : result.error ?? 'could not save the page'
+              )
+            })
+          return
+        }
+        case 'screenshot':
+          if (!guestId) {
+            showStatus('that page is no longer open')
+            return
+          }
+          void window.devlens
+            .pageCapture({
+              webContentsId: guestId,
+              title:
+                (pageMenu ? activeStatuses[pageMenu.viewId].title : '') || 'devlens-capture'
+            })
+            .then((result) => {
+              if (result.cancelled) return
+              showStatus(
+                result.ok
+                  ? `screenshot saved to ${result.path}`
+                  : result.error ?? 'could not capture the page'
+              )
+            })
+          return
+        case 'view-source':
+          if (!guestId) {
+            showStatus('that page is no longer open')
+            return
+          }
+          void window.devlens.pageViewSource(guestId).then((result) => {
+            if (!result.ok) showStatus(result.error ?? 'could not open page source')
           })
           return
         case 'copy-clean-link':
@@ -2119,6 +2176,7 @@ export function App() {
    */
   const handleScroll = useCallback(
     (tabId: string, viewId: ViewportId, message: ScrollSyncMessage) => {
+      setPageMenu(null)
       if (!syncEnabled) return
       const twin: ViewportId = viewId === 'mobile' ? 'desktop' : 'mobile'
       // The twin of the *same* tab: syncing across tabs would drag a hidden page around.
@@ -4349,6 +4407,7 @@ export function App() {
                 onPageFindResult={handlePageFindResult}
                 onZoomWheel={zoomFromGuestWheel}
                 onContextMenu={(payload) => handleGuestContextMenu(tab.id, 'mobile', payload)}
+                onInteraction={() => setPageMenu(null)}
                 overrideCss={cssApplied}
                 overrideDesignMode={designMode}
                 devCapabilities={mode === 'dev'}
@@ -4377,6 +4436,7 @@ export function App() {
                 onPageFindResult={handlePageFindResult}
                 onZoomWheel={zoomFromGuestWheel}
                 onContextMenu={(payload) => handleGuestContextMenu(tab.id, 'desktop', payload)}
+                onInteraction={() => setPageMenu(null)}
                 overrideCss={cssApplied}
                 overrideDesignMode={designMode}
                 chrome={capabilities.dualViewport}
@@ -4603,6 +4663,11 @@ export function App() {
                   canGoForward: Boolean(activeStatuses[pageMenu.viewId].canGoForward),
                   dev: mode === 'dev',
                   pageUrl: activeStatuses[pageMenu.viewId].url || startUrl || '',
+                  pageTitle:
+                    activeStatuses[pageMenu.viewId].title ||
+                    activeStatuses[pageMenu.viewId].url ||
+                    startUrl ||
+                    'DevLens page',
                   menuX: pageMenu.menuX,
                   menuY: pageMenu.menuY
                 }}

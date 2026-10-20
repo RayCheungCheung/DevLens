@@ -28,6 +28,7 @@ import type {
   OpenInIdeRequest,
   OpenInIdeResult,
   PageCommandKind,
+  PageCaptureRequest,
   ProfileAvatar,
   ProfileSettings,
   ProtectionState,
@@ -124,6 +125,10 @@ export interface DevLensApi {
   remoteImageRead(url: string): Promise<RemoteImageResult>
   /** Copies a fetched image to the native image clipboard. */
   remoteImageCopy(url: string): Promise<{ ok: boolean; error: string | null }>
+  /** Captures the visible guest page and saves it as a PNG. */
+  pageCapture(request: PageCaptureRequest): Promise<SaveTextResult>
+  /** Reads the guest DOM HTML and opens it in a dedicated source window. */
+  pageViewSource(webContentsId: number): Promise<{ ok: boolean; error: string | null }>
   /** The guest's current zoom, as a whole percentage; 100 means default. */
   pageZoom(webContentsId: number): Promise<number>
   /** Nudges the guest's logarithmic zoom level and returns the resulting percentage. */

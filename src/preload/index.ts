@@ -23,6 +23,7 @@ import type {
   HistoryEntry,
   ClipboardVerdict,
   PageCommandKind,
+  PageCaptureRequest,
   InspectionState,
   LocalServerScan,
   ModeState,
@@ -160,6 +161,10 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.remoteImageRead, url),
   remoteImageCopy: (url: string): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke(IPC.remoteImageCopy, url),
+  pageCapture: (request: PageCaptureRequest): Promise<SaveTextResult> =>
+    ipcRenderer.invoke(IPC.pageCapture, request),
+  pageViewSource: (webContentsId: number): Promise<{ ok: boolean; error: string | null }> =>
+    ipcRenderer.invoke(IPC.pageViewSource, webContentsId),
 
   clipboardWrite: (text: string): Promise<boolean> => ipcRenderer.invoke(IPC.clipboardWrite, text),
   clipboardRead: (): Promise<string> => ipcRenderer.invoke(IPC.clipboardRead),

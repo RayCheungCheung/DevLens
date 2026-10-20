@@ -29,6 +29,7 @@ const TEXT_FIND_CHANNEL = 'devlens:viewport:text-find' satisfies IpcChannel
 const TEXT_FIND_RESULT_CHANNEL = 'devlens:viewport:text-find-result' satisfies IpcChannel
 const CONTEXT_MENU_CHANNEL = 'devlens:viewport:context-menu' satisfies IpcChannel
 const ZOOM_WHEEL_RESULT_CHANNEL = 'devlens:viewport:zoom-wheel-result' satisfies IpcChannel
+const INTERACTION_CHANNEL = 'devlens:viewport:interaction' satisfies IpcChannel
 const FOLD_CHANNEL = 'devlens:viewport:fold' satisfies IpcChannel
 const MODE_CHANNEL = 'devlens:viewport:mode' satisfies IpcChannel
 
@@ -607,6 +608,12 @@ window.addEventListener(
       mediaHeight: sized ? Math.round(sized.naturalHeight || sized.videoHeight || 0) || null : null
     })
   },
+  true
+)
+
+window.addEventListener(
+  'pointerdown',
+  () => ipcRenderer.sendToHost(INTERACTION_CHANNEL),
   true
 )
 

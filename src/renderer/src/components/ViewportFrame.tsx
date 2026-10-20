@@ -128,6 +128,8 @@ interface ViewportFrameProps {
    * and the shell needs to know which frame a paste or a "back" belongs to.
    */
   onContextMenu?: (payload: Omit<PageContextMenuPayload, 'viewId'>) => void
+  /** A click inside the guest, which lives outside the shell's own pointer event tree. */
+  onInteraction?: () => void
   /**
    * Normal mode renders a single pane with no developer chrome: no header, no device
    * selector, no frame border - the page fills the workspace.
@@ -177,6 +179,7 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
     onPageFindResult,
     onZoomWheel,
     onContextMenu,
+    onInteraction,
     overrideCss = '',
     overrideDesignMode = false,
     chrome = true,
@@ -260,7 +263,8 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
     onFindResult,
     onPageFindResult,
     onZoomWheel,
-    onContextMenu
+    onContextMenu,
+    onInteraction
   })
   useLayoutEffect(() => {
     callbacks.current = {
@@ -271,7 +275,8 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
       onFindResult,
       onPageFindResult,
       onZoomWheel,
-      onContextMenu
+      onContextMenu,
+      onInteraction
     }
   })
 
@@ -482,6 +487,10 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
       if (detail.channel === IPC.viewportContextMenu) {
         const [payload] = detail.args as [Omit<PageContextMenuPayload, 'viewId'>]
         if (payload) callbacks.current.onContextMenu?.(payload)
+        return
+      }
+      if (detail.channel === IPC.viewportInteraction) {
+        callbacks.current.onInteraction?.()
       }
     }
 
