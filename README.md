@@ -765,6 +765,8 @@ neural translation model is bundled yet.
 dropdown is populated by querying the OS for registered URI handlers, so it only offers editors
 that can actually receive `editor://file/<absolute-path>:<line>` requests. The current build
 detects VS Code, VS Code Insiders, VSCodium, Cursor, CodeBuddy, CodeBuddy CN, Trae and Windsurf.
+The custom listbox reads the executable's real application icon, shows the filename beneath each
+label, and supports arrow keys, Home/End, Enter, Escape and pointer selection.
 A switch disables the hand-off as a unit: the whole editor control becomes inactive and greyed
 out, the toolbar action disappears, and the main process refuses direct IPC requests as well.
 

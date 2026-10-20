@@ -18,6 +18,8 @@ export interface IdeOption {
   scheme: string
   installed: boolean
   detail: string | null
+  /** PNG data URL extracted from the installed executable, when the OS exposes one. */
+  icon: string | null
 }
 
 export function isIdeId(value: unknown): value is IdeId {

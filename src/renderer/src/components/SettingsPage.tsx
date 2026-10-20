@@ -83,6 +83,7 @@ import { DownloadsSettingsContent } from '@renderer/components/DownloadsSettings
 import { BrowsingDataSettingsContent } from '@renderer/components/BrowsingDataSettings'
 import { DefaultBrowserCard } from '@renderer/components/DefaultBrowserCard'
 import { LensyMascot } from '@renderer/components/LensyMascot'
+import { IdeSelect } from '@renderer/components/IdeSelect'
 import type { DownloadPreferences, DownloadPreferencesPatch } from '@shared/downloads'
 import { AppIconPicker, AppIconPreview } from '@renderer/components/AppIconPicker'
 import { appIconDesign } from '@shared/app-icon-art'
@@ -1734,33 +1735,12 @@ export function SettingsPage({
                     developer.ideEnabled ? 'opacity-100' : 'opacity-40'
                   ].join(' ')}
                 >
-                  <select
-                    data-testid="developer-ide-select"
-                    aria-label="Editor for opening source files"
+                  <IdeSelect
+                    options={ideOptions}
                     value={developer.ideId}
                     disabled={!developer.ideEnabled}
-                    onChange={(event) =>
-                      onDeveloperChange({ ideId: event.target.value as DeveloperPreferences['ideId'] })
-                    }
-                    className="h-9 min-w-0 flex-1 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[11px] text-ink-200 outline-none disabled:cursor-not-allowed disabled:text-ink-500 focus:border-[var(--devlens-accent-line)]"
-                  >
-                    {ideOptions
-                      .filter((option) => option.installed)
-                      .map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    {!ideOptions.some(
-                        (option) => option.id === developer.ideId && option.installed
-                      ) && (
-                        <option value={developer.ideId}>
-                          {ideOptions.find((option) => option.id === developer.ideId)?.label ??
-                            developer.ideId}{' '}
-                          (not detected)
-                        </option>
-                      )}
-                  </select>
+                    onChange={(ideId) => onDeveloperChange({ ideId })}
+                  />
                   <span className="shrink-0 rounded-md border border-[var(--devlens-hairline)] px-2.5 py-1.5 font-mono text-[9px] text-ink-500">
                     {ideOptions.filter((option) => option.installed).length} editor
                     {ideOptions.filter((option) => option.installed).length === 1 ? '' : 's'} found

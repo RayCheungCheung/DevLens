@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { basename } from 'node:path'
+import { app } from 'electron'
 import { IDE_PRESETS, type IdeOption } from '../shared/ide'
 
 const run = promisify(execFile)
@@ -46,12 +47,21 @@ export async function listIdeOptions(): Promise<IdeOption[]> {
         process.platform === 'win32'
           ? await windowsScheme(preset.scheme)
           : await unixCommand(preset.command)
+      let icon: string | null = null
+      if (executable) {
+        try {
+          icon = (await app.getFileIcon(executable, { size: 'normal' })).toDataURL()
+        } catch {
+          icon = null
+        }
+      }
       return {
         id: preset.id,
         label: preset.label,
         scheme: preset.scheme,
         installed: Boolean(executable),
-        detail: executable ? basename(executable) : null
+        detail: executable ? basename(executable) : null,
+        icon
       }
     })
   )
