@@ -7,7 +7,7 @@
  */
 
 export type LaunchTarget = 'launchpad' | 'blank' | 'custom'
-export type StartupTabMode = 'none' | 'pinned' | 'all'
+export type StartupTabMode = 'none' | 'pinned' | 'all' | 'custom'
 import type { WallpaperPresetId } from './wallpapers'
 
 export interface LaunchpadWidgets {
@@ -43,6 +43,8 @@ export interface LaunchpadPreferences {
   customUrl: string
   launchAtLogin: boolean
   startupTabs: StartupTabMode
+  /** The page opened at launch when `startupTabs` is `custom`. */
+  startupUrl: string
   /** Refresh default-browser status whenever the DevLens window gains focus. */
   checkDefaultBrowser: boolean
   widgets: LaunchpadWidgets
@@ -78,6 +80,7 @@ export const DEFAULT_LAUNCHPAD_PREFERENCES: LaunchpadPreferences = {
   customUrl: 'https://duckduckgo.com/',
   launchAtLogin: false,
   startupTabs: 'none',
+  startupUrl: 'https://developer.mozilla.org/',
   checkDefaultBrowser: true,
   widgets: {
     clock: true,

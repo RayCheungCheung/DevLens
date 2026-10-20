@@ -1028,13 +1028,21 @@ export function App() {
         }
         const storedLaunchpad = storedPreferences.launchpad ?? DEFAULT_LAUNCHPAD_PREFERENCES
         const savedTabs = storedLaunchpad.session.tabs
+        const customStartupUrl =
+          storedLaunchpad.startupTabs === 'custom' ? storedLaunchpad.startupUrl.trim() : ''
         const restored =
-          storedLaunchpad.startupTabs === 'all'
-            ? savedTabs
-            : storedLaunchpad.startupTabs === 'pinned'
-              ? savedTabs.filter((tab) => tab.pinned === true)
-              : []
-        if (restored.length > 0) {
+          storedLaunchpad.startupTabs === 'custom'
+            ? []
+            : storedLaunchpad.startupTabs === 'all'
+              ? savedTabs
+              : storedLaunchpad.startupTabs === 'pinned'
+                ? savedTabs.filter((tab) => tab.pinned === true)
+                : []
+        if (customStartupUrl) {
+          setAddress(customStartupUrl)
+          standardUrl.current = customStartupUrl
+          openTab(customStartupUrl, '', { useNewTabTarget: false })
+        } else if (restored.length > 0) {
           const ids = restored.map((tab) =>
             openTab(tab.url, tab.title, {
               useNewTabTarget: false,

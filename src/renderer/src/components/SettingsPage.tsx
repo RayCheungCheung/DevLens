@@ -37,7 +37,6 @@ import type {
   LaunchpadSystemState,
   LaunchpadWidgets,
   LaunchTarget,
-  StartupTabMode
 } from '@shared/launchpad'
 import {
   resolveLaunchpadWallpaper,
@@ -90,6 +89,7 @@ import { appIconDesign } from '@shared/app-icon-art'
 import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
 import { ToggleSwitch as Switch } from '@renderer/components/ToggleSwitch'
 import { IdentitySettingsContent } from '@renderer/components/IdentitySettings'
+import { StartupTabsSelect } from '@renderer/components/StartupTabsSelect'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -282,6 +282,7 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const [filter, setFilter] = useState('')
   const [homeDraft, setHomeDraft] = useState(launchpad.customUrl)
+  const [startupUrlDraft, setStartupUrlDraft] = useState(launchpad.startupUrl)
   const [weatherDraft, setWeatherDraft] = useState(launchpad.weatherPlace)
   const [exceptionDraft, setExceptionDraft] = useState('')
   const [webLanguageDraft, setWebLanguageDraft] = useState('zh-CN')
@@ -295,13 +296,16 @@ export function SettingsPage({
   const customUrlEnabled =
     launchpad.newTabTarget === 'custom' || launchpad.homeTarget === 'custom'
   const startupTabsDetail =
-    launchpad.startupTabs === 'pinned'
-      ? `${pinnedTabCount} pinned tab${pinnedTabCount === 1 ? '' : 's'} will open at startup.`
-      : launchpad.startupTabs === 'all'
-        ? `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'} will open at startup.`
-        : `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'}; startup restore is off.`
+    launchpad.startupTabs === 'custom'
+      ? `Open ${launchpad.startupUrl} when DevLens starts.`
+      : launchpad.startupTabs === 'pinned'
+        ? `${pinnedTabCount} pinned tab${pinnedTabCount === 1 ? '' : 's'} will open at startup.`
+        : launchpad.startupTabs === 'all'
+          ? `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'} will open at startup.`
+          : `${savedTabCount} saved tab${savedTabCount === 1 ? '' : 's'}; startup restore is off.`
 
   useEffect(() => setHomeDraft(launchpad.customUrl), [launchpad.customUrl])
+  useEffect(() => setStartupUrlDraft(launchpad.startupUrl), [launchpad.startupUrl])
   useEffect(() => setWeatherDraft(launchpad.weatherPlace), [launchpad.weatherPlace])
 
   const filteredCategories = useMemo(() => {
@@ -327,6 +331,15 @@ export function SettingsPage({
       return
     }
     onLaunchpad({ customUrl: next })
+  }
+
+  const commitStartupUrl = (): void => {
+    const next = startupUrlDraft.trim()
+    if (!next) {
+      setStartupUrlDraft(launchpad.startupUrl)
+      return
+    }
+    onLaunchpad({ startupUrl: next })
   }
 
   const commitWeatherPlace = (): void => {
@@ -485,20 +498,48 @@ export function SettingsPage({
                     label="Open previous windows and tabs"
                     detail={startupTabsDetail}
                   >
-                    <select
-                      data-testid="launchpad-startup-tabs"
-                      aria-label="Open previous windows and tabs"
+                    <StartupTabsSelect
                       value={launchpad.startupTabs}
-                      onChange={(event) =>
-                        onLaunchpad({ startupTabs: event.target.value as StartupTabMode })
-                      }
-                      className="h-8 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[10px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-                    >
-                      <option value="none">Don't restore tabs</option>
-                      <option value="pinned">Pinned tabs only</option>
-                      <option value="all">All previous tabs</option>
-                    </select>
+                      savedCount={savedTabCount}
+                      pinnedCount={pinnedTabCount}
+                      onChange={(startupTabs) => onLaunchpad({ startupTabs })}
+                    />
                   </SettingRow>
+                  {launchpad.startupTabs === 'custom' && (
+                    <div className="py-3">
+                      <label className="text-[11px] text-ink-300">
+                        Startup link
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                          <span className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-[var(--devlens-hairline)] bg-[var(--devlens-tab)] px-3 focus-within:border-[var(--devlens-accent-line)]">
+                            <Globe2 size={15} className="shrink-0 text-ink-500" />
+                            <input
+                              value={startupUrlDraft}
+                              data-testid="launchpad-startup-url"
+                              spellCheck={false}
+                              onChange={(event) => setStartupUrlDraft(event.target.value)}
+                              onBlur={commitStartupUrl}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') event.currentTarget.blur()
+                              }}
+                              placeholder="https://example.com/"
+                              className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-100 outline-none placeholder:text-ink-500"
+                            />
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="launchpad-startup-url-save"
+                            onClick={commitStartupUrl}
+                            className="h-10 rounded-lg border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-4 text-[12px] text-[var(--devlens-accent)] hover:brightness-110"
+                          >
+                            Save link
+                          </button>
+                        </div>
+                      </label>
+                      <p className="mt-2 text-[10px] leading-5 text-ink-500">
+                        DevLens opens this page on every normal launch. Tabs from your previous session are not restored in this mode.
+                      </p>
+                    </div>
+                  )}
                   <SettingRow
                     label="Open DevLens automatically when your computer starts up"
                     detail="Start DevLens when you sign in to this computer."

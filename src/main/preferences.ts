@@ -444,11 +444,14 @@ function sanitizeLaunchpad(
     ),
     launchAtLogin: input?.launchAtLogin === true,
     startupTabs:
-      input?.startupTabs === 'all' || input?.startupTabs === 'pinned'
+      input?.startupTabs === 'all' ||
+      input?.startupTabs === 'pinned' ||
+      input?.startupTabs === 'custom'
         ? input.startupTabs
         : (input as { restoreLastTabs?: boolean } | undefined)?.restoreLastTabs === true
           ? 'all'
           : defaults.startupTabs,
+    startupUrl: normalizeWebUrl(input?.startupUrl, defaults.startupUrl),
     checkDefaultBrowser: input?.checkDefaultBrowser !== false,
     widgets: {
       clock: input?.widgets?.clock !== false,
