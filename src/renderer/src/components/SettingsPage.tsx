@@ -281,6 +281,8 @@ export function SettingsPage({
   const savedTabCount = launchpad.session.tabs.length
   const pinnedTabCount = launchpad.session.tabs.filter((tab) => tab.pinned).length
   const wallpaperUrl = resolveLaunchpadWallpaper(launchpad)
+  const customUrlEnabled =
+    launchpad.newTabTarget === 'custom' || launchpad.homeTarget === 'custom'
   const startupTabsDetail =
     launchpad.startupTabs === 'pinned'
       ? `${pinnedTabCount} pinned tab${pinnedTabCount === 1 ? '' : 's'} will open at startup.`
@@ -307,6 +309,7 @@ export function SettingsPage({
   const current = CATEGORIES.find((entry) => entry.id === category) ?? CATEGORIES[0]
 
   const commitHomepage = (): void => {
+    if (!customUrlEnabled) return
     const next = homeDraft.trim()
     if (!next) {
       setHomeDraft(launchpad.customUrl)
@@ -541,30 +544,60 @@ export function SettingsPage({
                     />
                   </div>
                 </div>
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--devlens-hairline)] bg-black/20 px-2.5 focus-within:border-[var(--devlens-accent-line)]">
-                    <Globe2 size={13} className="shrink-0 text-ink-500" />
+                <div
+                  className={[
+                    'mt-4 flex flex-col gap-2 transition-opacity sm:flex-row',
+                    customUrlEnabled ? 'opacity-100' : 'opacity-45'
+                  ].join(' ')}
+                >
+                  <label
+                    aria-disabled={!customUrlEnabled}
+                    title={
+                      customUrlEnabled
+                        ? 'Address used when either target is set to Custom URL'
+                        : 'Choose Custom URL for New tab or Homepage to edit this address'
+                    }
+                    className={[
+                      'flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border px-3',
+                      customUrlEnabled
+                        ? 'border-[var(--devlens-hairline)] bg-black/20 focus-within:border-[var(--devlens-accent-line)]'
+                        : 'cursor-not-allowed border-white/5 bg-white/[0.015]'
+                    ].join(' ')}
+                  >
+                    <Globe2
+                      size={15}
+                      className={customUrlEnabled ? 'shrink-0 text-ink-500' : 'shrink-0 text-ink-600'}
+                    />
                     <input
                       type="text"
                       value={homeDraft}
                       data-testid="launchpad-custom-url"
+                      disabled={!customUrlEnabled}
+                      aria-disabled={!customUrlEnabled}
                       spellCheck={false}
                       onChange={(event) => setHomeDraft(event.target.value)}
                       onBlur={commitHomepage}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') event.currentTarget.blur()
                       }}
-                      className="min-w-0 flex-1 bg-transparent text-[11px] text-ink-200 outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-200 outline-none disabled:cursor-not-allowed disabled:text-ink-500"
                     />
                   </label>
                   <button
                     type="button"
+                    data-testid="launchpad-save-custom-url"
+                    disabled={!customUrlEnabled}
                     onClick={commitHomepage}
-                    className="h-9 rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-3 text-[11px] text-[var(--devlens-accent)] hover:brightness-110"
+                    className="h-10 rounded-lg border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-4 text-[12px] text-[var(--devlens-accent)] hover:brightness-110 disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-white/[0.02] disabled:text-ink-500 disabled:hover:brightness-100"
                   >
                     Save URL
                   </button>
                 </div>
+                <p className="mt-2 text-[10px] leading-5 text-ink-500">
+                  {customUrlEnabled
+                    ? 'This address is used whenever New tab or Homepage is set to Custom URL.'
+                    : 'Choose Custom URL for New tab or Homepage to enable this address.'}
+                </p>
               </SettingsCard>
 
               <SettingsCard
