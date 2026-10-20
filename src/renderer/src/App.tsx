@@ -750,6 +750,15 @@ export function App() {
         : 'light'
       : appearancePreferences.contentTheme
 
+  // Portals mount under <body>, outside the shell root. Mirror the theme tokens on <html> so
+  // dropdowns and menus rendered through a portal inherit the same Light/Dark surface colours.
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.dataset.contentTheme = resolvedContentTheme
+    root.dataset.workspaceTheme = appearancePreferences.workspaceTheme
+    root.dataset.mode = mode
+  }, [appearancePreferences.workspaceTheme, mode, resolvedContentTheme])
+
   /**
    * The omnibox configuration, and the site icons the operator's own rows are drawn with.
    *

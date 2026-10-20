@@ -180,7 +180,7 @@ export function IdeSelect({ options, value, disabled, onChange }: IdeSelectProps
           id="developer-ide-listbox"
           role="listbox"
           data-testid="developer-ide-listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] shadow-[0_22px_55px_rgba(0,0,0,0.48),0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl"
+          className="devlens-dropdown-surface absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border backdrop-blur-xl"
         >
           <div className="flex items-center justify-between border-b border-[var(--devlens-hairline)] px-3.5 py-2.5">
             <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-500">

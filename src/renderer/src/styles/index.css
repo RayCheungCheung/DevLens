@@ -150,6 +150,18 @@
   background: color-mix(in srgb, var(--devlens-accent) 28%, transparent);
 }
 
+/* One surface for every custom dropdown, including those rendered through a portal. */
+.devlens-dropdown-surface {
+  background: color-mix(in srgb, var(--devlens-tab-active) 97%, var(--devlens-accent) 3%);
+  border-color: var(--devlens-hairline-strong);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.48);
+}
+
+[data-content-theme='light'] .devlens-dropdown-surface {
+  background: #ffffff;
+  box-shadow: 0 20px 48px rgba(33, 55, 84, 0.22);
+}
+
 /* Density changes the physical controls, not just a label in Settings. */
 [data-density='compact'] header.nova-glass {
   height: 2.5rem;

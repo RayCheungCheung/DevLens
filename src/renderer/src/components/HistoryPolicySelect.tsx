@@ -181,7 +181,7 @@ export function HistoryPolicySelect({ value, onChange }: HistoryPolicySelectProp
           role="listbox"
           data-testid="privacy-history-policy-listbox"
           className={[
-            'absolute left-0 z-50 w-full max-w-[460px] overflow-hidden rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] shadow-[0_22px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl',
+            'devlens-dropdown-surface absolute left-0 z-50 w-full max-w-[460px] overflow-hidden rounded-xl border backdrop-blur-xl',
             openAbove ? 'bottom-full mb-2' : 'top-full mt-2'
           ].join(' ')}
         >

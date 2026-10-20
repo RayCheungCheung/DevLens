@@ -124,7 +124,7 @@ export function AiProviderSelect({ value, onChange }: AiProviderSelectProps) {
           id="ai-model-listbox"
           role="listbox"
           data-testid="ai-model-listbox"
-          className="absolute left-0 top-full z-[80] mt-1.5 w-[292px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] shadow-[0_20px_48px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+          className="devlens-dropdown-surface absolute left-0 top-full z-[80] mt-1.5 w-[292px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border backdrop-blur-xl"
         >
           <div className="flex items-center justify-between border-b border-[var(--devlens-hairline)] px-3 py-2">
             <span className="text-[8.5px] font-semibold uppercase tracking-[0.13em] text-ink-500">

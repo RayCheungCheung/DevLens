@@ -204,7 +204,7 @@ export function SelectMenu({
               width: position.width,
               maxHeight: position.maxHeight
             }}
-            className="fixed z-[150] overflow-y-auto rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] p-1.5 shadow-[0_22px_55px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+            className="devlens-dropdown-surface fixed z-[150] overflow-y-auto rounded-xl border p-1.5 backdrop-blur-xl"
           >
             {sections.map((section, sectionIndex) => (
               <div

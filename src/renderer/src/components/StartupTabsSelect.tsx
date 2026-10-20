@@ -160,7 +160,7 @@ export function StartupTabsSelect({
           id="launchpad-startup-tabs-listbox"
           role="listbox"
           data-testid="launchpad-startup-listbox"
-          className="absolute right-0 top-full z-50 mt-2 w-[340px] overflow-hidden rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] shadow-[0_22px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl"
+          className="devlens-dropdown-surface absolute right-0 top-full z-50 mt-2 w-[340px] overflow-hidden rounded-xl border backdrop-blur-xl"
         >
           <div className="flex items-center justify-between border-b border-[var(--devlens-hairline)] px-3.5 py-2.5">
             <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-500">
