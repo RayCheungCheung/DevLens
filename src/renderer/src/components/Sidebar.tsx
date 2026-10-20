@@ -539,10 +539,10 @@ function DockButton({ id, label, icon: Icon, active, onClick, badge, mark, hint 
              a provider tint that would ignore the rail's state. */
           className={[MARK_BOX, 'h-5 w-5'].join(' ')}
         >
-          <AiMark site={mark.brand} size={16} />
+          <AiMark site={mark.brand} size={17} />
         </span>
       ) : (
-        <Icon size={14} />
+        <Icon size={15} />
       )}
       {badge && (
         <span
