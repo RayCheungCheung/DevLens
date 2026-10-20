@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Clipboard, ExternalLink, Loader2, Sparkles } from 'lucide-react'
-import { AI_SITES, aiPartition, aiSite, type AiSiteId } from '@shared/ai-sites'
+import { aiPartition, aiSite, type AiSiteId } from '@shared/ai-sites'
 import type { AiContextChip } from '@shared/types'
 import type { DevLensWebviewElement } from '@renderer/types/webview-element'
-import { AiMark } from '@renderer/components/AiMark'
-import { MARK_BOX } from '@renderer/components/PrefixIcons'
+import { AiProviderSelect } from '@renderer/components/AiProviderSelect'
 
 interface AiAssistantPanelProps {
   /** The provider the profile last used; the dock shows the same thing. */
@@ -167,30 +166,10 @@ export function AiAssistantPanel({
     <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-panel" data-provider={site.id}>
       {/* ---------------- header: which provider, and the one action ---------------- */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--devlens-hairline)] px-2.5 py-2">
-        {/* The same 20px box the engine marks use, with the glyph inset inside it. */}
-        <span
-          data-testid="ai-provider-mark"
-          data-brand={site.id}
-          className={[MARK_BOX, 'h-5 w-5', site.accent].join(' ')}
-        >
-          <AiMark site={site.id} size={16} />
-        </span>
-
-        <select
-          data-testid="ai-model-select"
-          aria-label="AI model"
-          title={site.label}
+        <AiProviderSelect
           value={site.id}
-          onChange={(event) => onProviderChange(event.target.value as AiSiteId)}
-          /* A floor on the width, so the longest provider name is never the one that gets cut. */
-          className="h-7 min-w-[8.5rem] flex-1 rounded-md border border-[var(--devlens-hairline)] bg-ink-900/70 px-1.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-        >
-          {AI_SITES.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
+          onChange={onProviderChange}
+        />
 
         <button
           type="button"

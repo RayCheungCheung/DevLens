@@ -6,6 +6,13 @@ interface AiMarkProps {
   className?: string
 }
 
+export const AI_BRAND_THEME: Record<AiSiteId, { background: string; border: string }> = {
+  gemini: { background: 'rgba(56, 189, 248, 0.11)', border: 'rgba(56, 189, 248, 0.3)' },
+  deepseek: { background: 'rgba(77, 107, 254, 0.13)', border: 'rgba(77, 107, 254, 0.34)' },
+  chatgpt: { background: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.28)' },
+  claude: { background: 'rgba(217, 119, 87, 0.13)', border: 'rgba(217, 119, 87, 0.34)' }
+}
+
 /**
  * The assistant's brand marks, drawn inline in a 24-unit frame.
  *

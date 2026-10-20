@@ -75,7 +75,7 @@ import {
 import {
   PROTECTION_DESCRIPTORS
 } from '@shared/protection'
-import { AiMark } from '@renderer/components/AiMark'
+import { AI_BRAND_THEME as AI_PROVIDER_TILE, AiMark } from '@renderer/components/AiMark'
 import { OmniboxSettingsContent } from '@renderer/components/OmniboxSettings'
 import { AboutSettingsContent } from '@renderer/components/AboutSettings'
 import { DownloadsSettingsContent } from '@renderer/components/DownloadsSettings'
@@ -178,13 +178,6 @@ const CATEGORIES: {
   { id: 'identity', label: 'Identity', summary: 'Profile and startup prompt', icon: UserRound },
   { id: 'about', label: 'About DevLens & System Updates', summary: 'Version, updates and license', icon: Info }
 ]
-
-const AI_PROVIDER_TILE: Record<AiSiteId, { background: string; border: string }> = {
-  gemini: { background: 'rgba(56, 189, 248, 0.11)', border: 'rgba(56, 189, 248, 0.3)' },
-  deepseek: { background: 'rgba(77, 107, 254, 0.13)', border: 'rgba(77, 107, 254, 0.34)' },
-  chatgpt: { background: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.28)' },
-  claude: { background: 'rgba(217, 119, 87, 0.13)', border: 'rgba(217, 119, 87, 0.34)' }
-}
 
 const TOOL_ROWS: { key: keyof ToolbarTools; label: string; detail: string }[] = [
   { key: 'viewport', label: 'Viewport chip', detail: 'Show which viewport a command will reach' },
