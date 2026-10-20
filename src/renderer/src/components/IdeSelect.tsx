@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import type { IdeId, IdeOption } from '@shared/ide'
-import { IDE_BRAND_TILE, ideBrandLogo } from '@shared/ide-brand'
+import { IDE_BRAND_THEME, ideBrandLogo } from '@shared/ide-brand'
 import { useMenuDismiss } from '@renderer/hooks/useMenuDismiss'
 
 interface IdeSelectProps {
@@ -13,18 +13,11 @@ interface IdeSelectProps {
 
 function EditorIcon({ option }: { option: IdeOption | undefined }) {
   if (!option) return null
-  const badge =
-    option.id === 'vscode-insiders'
-      ? 'bg-[#32d583]'
-      : option.id === 'codebuddycn'
-        ? 'bg-[#ff7a59]'
-        : null
+  const brand = IDE_BRAND_THEME[option.id]
   return (
     <span
-      className={[
-        'relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_4px_12px_rgba(0,0,0,0.22)]',
-        IDE_BRAND_TILE[option.id]
-      ].join(' ')}
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_4px_12px_rgba(0,0,0,0.22)]"
+      style={{ backgroundColor: brand.background, borderColor: brand.border }}
     >
       <img
         src={ideBrandLogo(option.id)}
@@ -33,13 +26,10 @@ function EditorIcon({ option }: { option: IdeOption | undefined }) {
         draggable={false}
         className="h-[23px] w-[23px] select-none object-contain"
       />
-      {badge && (
+      {option.id === 'codebuddycn' && (
         <span
           aria-hidden="true"
-          className={[
-            'absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full ring-2 ring-[#0b0d11]',
-            badge
-          ].join(' ')}
+          className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-[#ff7a59] ring-2 ring-[#0b0d11]"
         />
       )}
     </span>
