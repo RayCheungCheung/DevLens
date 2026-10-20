@@ -62,6 +62,8 @@ interface SidebarProps {
   /** Whether the panel column is showing; the dock itself is always there. */
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Which edge of the workspace owns the entire dock and panel column. */
+  side: 'start' | 'end'
   activeView: ViewportId
   activeUrl: string
   activeTitle: string
@@ -200,6 +202,7 @@ export function Sidebar({
   onPanelChange,
   open,
   onOpenChange,
+  side,
   activeView,
   activeUrl,
   activeTitle,
@@ -229,8 +232,8 @@ export function Sidebar({
 
       const move = (moveEvent: MouseEvent): void => {
         if (!dragging.current) return
-        // The dock is on the left, so widening the panel means dragging its edge left.
-        const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + (moveEvent.clientX - startX)))
+        const delta = side === 'end' ? startX - moveEvent.clientX : moveEvent.clientX - startX
+        const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta))
         onWidthChange(next)
       }
       const stop = (): void => {
@@ -244,7 +247,7 @@ export function Sidebar({
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', stop)
     },
-    [onWidthChange, width]
+    [onWidthChange, side, width]
   )
 
   const badges: Partial<Record<SidebarPanel, { value: number; tone: 'danger' | 'warn' }>> = {}
@@ -270,7 +273,14 @@ export function Sidebar({
   }
 
   return (
-    <>
+    <div
+      data-testid="sidebar-shell"
+      data-side={side}
+      className={[
+        'flex min-h-0 shrink-0',
+        side === 'end' ? 'order-last flex-row-reverse' : 'flex-row'
+      ].join(' ')}
+    >
       <nav
         data-testid="dock"
         data-mode={mode}
@@ -318,7 +328,9 @@ export function Sidebar({
             'nova-glass flex min-h-0 flex-col border-[var(--devlens-hairline)]',
             overlay
               ? 'fixed right-3 bottom-12 z-[60] rounded-xl border shadow-2xl'
-              : 'relative shrink-0 border-r'
+              : side === 'end'
+                ? 'relative shrink-0 border-l'
+                : 'relative shrink-0 border-r'
           ].join(' ')}
           style={overlay ? { width: `${OVERLAY_WIDTH}px`, maxHeight: '72vh' } : { width: `${width}px` }}
         >
@@ -328,7 +340,10 @@ export function Sidebar({
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize sidebar"
-              className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--devlens-accent-soft)]"
+              className={[
+                'absolute top-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--devlens-accent-soft)]',
+                side === 'end' ? 'left-0' : 'right-0'
+              ].join(' ')}
             />
           )}
 
@@ -493,7 +508,7 @@ export function Sidebar({
           )}
         </aside>
       )}
-    </>
+    </div>
   )
 }
 

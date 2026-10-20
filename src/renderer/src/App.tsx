@@ -293,7 +293,8 @@ export function App() {
   const [address, setAddress] = useState('')
   const [activeView, setActiveView] = useState<ViewportId>('mobile')
   const [syncEnabled, setSyncEnabled] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  /** The dock stays; its panel column starts closed so launch does not open developer tools. */
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [activePanel, setActivePanel] = useState<SidebarPanel>('console')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -3949,6 +3950,7 @@ export function App() {
           onPanelChange={setActivePanel}
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
+          side={toolbarLayout.sidebarToggle === 'end' ? 'end' : 'start'}
           activeView={activeView}
           activeUrl={activeStatus.url}
           activeTitle={activeStatus.title}

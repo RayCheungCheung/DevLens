@@ -108,16 +108,16 @@ export function SettingsPanel({
           <LayoutPanelTop size={12} className="text-[var(--devlens-accent)]" />
           Toolbar &amp; sidebar
         </h3>
-        <p className="mt-1.5 text-[10px] leading-4 text-ink-500">Where the dock handle sits</p>
+        <p className="mt-1.5 text-[10px] leading-4 text-ink-500">Move the entire dock and panel column</p>
         <div
           role="radiogroup"
-          aria-label="Sidebar toggle position"
+          aria-label="Sidebar position"
           className="mt-2 flex overflow-hidden rounded border border-[var(--devlens-hairline)]"
         >
           {(
             [
-              ['start', 'Far left', ArrowLeftToLine],
-              ['end', 'With the tools', ArrowRightToLine]
+              ['start', 'Left side', ArrowLeftToLine],
+              ['end', 'Right side', ArrowRightToLine]
             ] as [SidebarTogglePosition, string, typeof ArrowLeftToLine][]
           ).map(([value, label, Glyph]) => {
             const active = layout.sidebarToggle === value

@@ -1460,9 +1460,9 @@ export function SettingsPage({
               <div id="devlens-layout-settings">
                 <SettingsCard
                   title="Toolbar and sidebar"
-                  detail="The dock handle moves; the toolbar tools can be hidden individually."
+                  detail="Move the entire dock and panel column; toolbar tools can be hidden individually."
                 >
-                  <p className="mb-2 text-[10px] text-ink-400">Sidebar handle position</p>
+                  <p className="mb-2 text-[10px] text-ink-400">Sidebar position</p>
                   <Segmented
                     value={toolbarLayout.sidebarToggle}
                     testId="settings-sidebar-position"
@@ -1470,8 +1470,8 @@ export function SettingsPage({
                       onLayout({ sidebarToggle: value as SidebarTogglePosition })
                     }
                     options={[
-                      { value: 'start', label: 'Far left', icon: <ArrowLeftToLine size={13} /> },
-                      { value: 'end', label: 'With the tools', icon: <ArrowRightToLine size={13} /> }
+                      { value: 'start', label: 'Left side', icon: <ArrowLeftToLine size={13} /> },
+                      { value: 'end', label: 'Right side', icon: <ArrowRightToLine size={13} /> }
                     ]}
                   />
                   <div className="mt-4 divide-y divide-white/[0.05]">
