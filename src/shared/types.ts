@@ -177,6 +177,17 @@ export interface AiAskResult {
   model: string
 }
 
+/** Opens a top-level sign-in window that shares an AI provider's partition. */
+export interface AiSignInWindowRequest {
+  provider: string
+  partition: string
+}
+
+export interface AiSignInWindowResult {
+  ok: boolean
+  error?: string
+}
+
 /** Streamed over IPC while a completion is running. */
 export interface AiStreamEvent {
   streamId: string

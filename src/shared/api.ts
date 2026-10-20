@@ -2,6 +2,8 @@ import type {
   AiAskRequest,
   AiAskResult,
   AiProviderInfo,
+  AiSignInWindowRequest,
+  AiSignInWindowResult,
   AiStreamEvent,
   AboutInfo,
   BootstrapPayload,
@@ -81,6 +83,8 @@ export interface DevLensApi {
   aiAsk(request: AiAskRequest): Promise<AiAskResult>
   aiAbort(streamId: string): void
   onAiStream(listener: (event: AiStreamEvent) => void): Unsubscribe
+  /** Opens a top-level provider sign-in window sharing the AI panel's partition. */
+  aiOpenSignInWindow(request: AiSignInWindowRequest): Promise<AiSignInWindowResult>
 
   /* Interceptor and repeater */
   interceptorState(): Promise<InterceptorSnapshot>

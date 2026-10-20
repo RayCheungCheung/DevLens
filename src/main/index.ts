@@ -17,6 +17,7 @@ import { IPC } from '../shared/ipc'
 import type {
   AiAskRequest,
   AiStreamEvent,
+  AiSignInWindowRequest,
   BookmarkDropPosition,
   BookmarkEntry,
   BookmarkSnapshot,
@@ -48,6 +49,7 @@ import type {
 } from '../shared/types'
 import { isProtectionLevel, type ProtectionLevel } from '../shared/protection'
 import { abort as abortAi, ask as askAi, describeProvider } from './ai'
+import { openAiSignInWindow } from './ai-window'
 import { loadConfig } from './config'
 import { instrumentGuest, registerGuest, setEmitter } from './guests'
 import { flushHistory, historyAdd, historyClear, historyList, historyPrune } from './history'
@@ -293,6 +295,9 @@ function registerIpcHandlers(): void {
   /* ---------------- AI debugger ---------------- */
 
   ipcMain.handle(IPC.aiProviderInfo, () => describeProvider(config.ai))
+  ipcMain.handle(IPC.aiOpenSignInWindow, (_event, request: AiSignInWindowRequest) =>
+    openAiSignInWindow(request)
+  )
 
   // The completion itself runs to completion in the background; the renderer follows it
   // through the aiStream channel, which is what makes the transcript stream live.

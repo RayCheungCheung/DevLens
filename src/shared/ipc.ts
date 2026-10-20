@@ -36,6 +36,8 @@ export const IPC = {
   aiAbort: 'devlens:ai:abort',
   /** main -> renderer: streamed completion tokens and terminal states. */
   aiStream: 'devlens:ai:stream',
+  /** renderer -> main (invoke): top-level sign-in window sharing an AI partition. */
+  aiOpenSignInWindow: 'devlens:ai:open-sign-in-window',
 
   /* HTTP interceptor and repeater ------------------------------------ */
   /** renderer -> main (invoke): current interceptor state. */

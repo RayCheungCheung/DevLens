@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Clipboard, ExternalLink, Loader2, Sparkles } from 'lucide-react'
+import {
+  Clipboard,
+  ExternalLink,
+  Loader2,
+  LogIn,
+  RefreshCw,
+  Sparkles
+} from 'lucide-react'
 import { aiPartition, aiSite, type AiSiteId } from '@shared/ai-sites'
 import type { AiContextChip } from '@shared/types'
 import type { DevLensWebviewElement } from '@renderer/types/webview-element'
@@ -124,6 +131,22 @@ export function AiAssistantPanel({
     )
   }, [onNotice, prompt, site.label])
 
+  const openSignInWindow = useCallback(async () => {
+    const result = await window.devlens
+      .aiOpenSignInWindow({ provider: site.id, partition })
+      .catch(() => ({ ok: false, error: 'Could not open the sign-in window.' }))
+    onNotice(
+      result.ok
+        ? `sign-in window opened for ${site.label} - finish there, then reload this panel`
+        : result.error ?? 'Could not open the sign-in window.'
+    )
+  }, [onNotice, partition, site.id, site.label])
+
+  const reloadProvider = useCallback(() => {
+    guestRef.current?.reload()
+    onNotice(`reloading ${site.label}`)
+  }, [onNotice, site.label])
+
   /**
    * "Summarise page".
    *
@@ -212,10 +235,34 @@ export function AiAssistantPanel({
         />
       </div>
 
-      <p className="flex shrink-0 items-center gap-1 border-t border-[var(--devlens-hairline)] px-2.5 py-1.5 font-mono text-[9px] text-ink-600">
-        <ExternalLink size={9} />
-        {site.host} runs in its own partition - your browsing session is untouched
-      </p>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[var(--devlens-hairline)] px-2.5 py-2">
+        <p className="flex min-w-0 items-center gap-1 font-mono text-[9px] text-ink-600">
+          <ExternalLink size={9} className="shrink-0" />
+          <span className="truncate">{site.host} runs in its own partition</span>
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            data-testid="ai-reload-provider"
+            aria-label="Reload AI provider"
+            title="Reload this provider after signing in"
+            onClick={reloadProvider}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-white/[0.05] hover:text-ink-200"
+          >
+            <RefreshCw size={11} />
+          </button>
+          <button
+            type="button"
+            data-testid="ai-open-signin"
+            title="Google blocks OAuth inside embedded pages; sign in in a separate window and reload this panel"
+            onClick={() => void openSignInWindow()}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--devlens-hairline)] px-2.5 text-[10px] text-ink-400 transition-colors hover:border-[var(--devlens-accent-line)] hover:text-ink-100"
+          >
+            <LogIn size={10} />
+            Sign in separately
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

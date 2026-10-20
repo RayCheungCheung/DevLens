@@ -5,6 +5,8 @@ import type {
   AiAskRequest,
   AiAskResult,
   AiProviderInfo,
+  AiSignInWindowRequest,
+  AiSignInWindowResult,
   AiStreamEvent,
   AboutInfo,
   BootstrapPayload,
@@ -110,6 +112,8 @@ const api: DevLensApi = {
 
   onAiStream: (listener: (event: AiStreamEvent) => void): Unsubscribe =>
     subscribe(IPC.aiStream, listener),
+  aiOpenSignInWindow: (request: AiSignInWindowRequest): Promise<AiSignInWindowResult> =>
+    ipcRenderer.invoke(IPC.aiOpenSignInWindow, request),
 
   /* ---------------- Interceptor and repeater ---------------- */
 
