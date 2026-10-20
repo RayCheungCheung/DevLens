@@ -1,12 +1,12 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { BrowserWindow, Menu, shell } from 'electron'
+import { BrowserWindow, Menu, shell, type NativeImage } from 'electron'
 import type { WorkspaceMode } from '../shared/mode'
 
 /** Set by electron-vite while the Vite dev server is running. */
 const RENDERER_DEV_URL = process.env.ELECTRON_RENDERER_URL
 
-export function createShellWindow(): BrowserWindow {
+export function createShellWindow(icon?: NativeImage): BrowserWindow {
   const window = new BrowserWindow({
     width: 1680,
     height: 1020,
@@ -34,6 +34,7 @@ export function createShellWindow(): BrowserWindow {
           titleBarOverlay: { color: '#06070a', symbolColor: '#b6bfcd', height: 34 }
         }),
     title: 'DevLens',
+    ...(icon ? { icon } : {}),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

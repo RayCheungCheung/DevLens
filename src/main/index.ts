@@ -213,6 +213,17 @@ import { attachDownloadSession } from './downloads'
 const config = loadConfig()
 
 let shellWindow: BrowserWindow | null = null
+
+/** Applies one selected appearance icon to every live window and the macOS dock. */
+function applyShellAppIcon(style?: AppIconStyle): AppIconStyle {
+  const next: AppIconStyle = normalizeAppIconStyle(style)
+  const image = appIconFor(next)
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.setIcon(image)
+  }
+  if (process.platform === 'darwin') app.dock?.setIcon(image)
+  return next
+}
 let startupGateCompleted = false
 let exitCleanupDone = false
 let exitCleanupRunning = false
@@ -972,15 +983,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.appearanceSetAppIcon,
-    (_event, style?: AppIconStyle): AppIconStyle => {
-      const next: AppIconStyle = normalizeAppIconStyle(style)
-      const image = appIconFor(next)
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) window.setIcon(image)
-      }
-      if (process.platform === 'darwin') app.dock?.setIcon(image)
-      return next
-    }
+    (_event, style?: AppIconStyle): AppIconStyle => applyShellAppIcon(style)
   )
 
   ipcMain.handle(
@@ -1216,6 +1219,7 @@ function registerIpcHandlers(): void {
     flushPreferences()
     const next = switchProfile(String(id ?? ''))
     startupGateCompleted = true
+    applyShellAppIcon(preferencesNow().appearance.appIcon)
     // A profile that is being used for the first time needs the same capture hooks as the
     // others, otherwise its traffic would be invisible to the interceptor panel.
     const profile = next.find((entry) => entry.active)
@@ -1342,8 +1346,14 @@ function boot(): void {
    * set the same value explicitly; this is the fallback for every other session and webContents.
    */
   app.userAgentFallback = cleanUserAgent(app.userAgentFallback)
+  if (process.platform === 'win32') app.setAppUserModelId('com.devlens.browser')
 
-  shellWindow = createShellWindow()
+  configureProfiles({
+    defaultPartition: config.partition,
+    knownPartitions: [config.partition, GHOST_PARTITION, WIMH_PARTITION]
+  })
+  const startupIcon = appIconFor(preferencesNow().appearance.appIcon)
+  shellWindow = createShellWindow(startupIcon)
   setEmitter(sendToShell)
 
   /*
@@ -1394,10 +1404,7 @@ function boot(): void {
 
   // The workspace mode is main-process truth: it decides what this process collects and
   // rewrites, so a renderer bug cannot turn a clean normal session into a monitored one.
-  configureProfiles({
-    defaultPartition: config.partition,
-    knownPartitions: [config.partition, GHOST_PARTITION, WIMH_PARTITION]
-  })
+  applyShellAppIcon(preferencesNow().appearance.appIcon)
   configureMode({
     initial: config.mode,
     onChanged: (state) => {
