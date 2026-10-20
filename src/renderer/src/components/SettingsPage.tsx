@@ -21,7 +21,7 @@ import {
   Wrench
 } from 'lucide-react'
 import { AI_SITES, type AiSiteId } from '@shared/ai-sites'
-import type { BookmarkOptions, ProtectionState } from '@shared/types'
+import type { BookmarkOptions, BrowserProfile, ProfileAvatar, ProtectionState } from '@shared/types'
 import {
   type AboutPreferences,
   type BrowserPreferences,
@@ -89,6 +89,7 @@ import { AppIconPicker, AppIconPreview } from '@renderer/components/AppIconPicke
 import { appIconDesign } from '@shared/app-icon-art'
 import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
 import { ToggleSwitch as Switch } from '@renderer/components/ToggleSwitch'
+import { IdentitySettingsContent } from '@renderer/components/IdentitySettings'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -141,6 +142,11 @@ interface SettingsPageProps {
   profileAsk: boolean
   onProfileAsk: (ask: boolean) => void
   profileName: string
+  profiles: BrowserProfile[]
+  profilesBusy: boolean
+  onProfileSwitch: (id: string) => void
+  onProfileCreate: (name: string, avatar: ProfileAvatar) => void
+  onProfileDelete: (id: string) => void
   developer: DeveloperPreferences
   ideOptions: IdeOption[]
   onDeveloperChange: (patch: Partial<DeveloperPreferences>) => void
@@ -259,6 +265,11 @@ export function SettingsPage({
   profileAsk,
   onProfileAsk,
   profileName,
+  profiles,
+  profilesBusy,
+  onProfileSwitch,
+  onProfileCreate,
+  onProfileDelete,
   developer,
   ideOptions,
   onDeveloperChange,
@@ -2080,38 +2091,15 @@ export function SettingsPage({
           )}
 
           {category === 'identity' && (
-            <div className="flex flex-col gap-4">
-              <SettingsCard
-                title="Current profile"
-                detail="Each identity keeps its own history, bookmarks, cookies and settings."
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-400/15 font-mono text-[14px] uppercase text-teal-100">
-                    {profileName.slice(0, 1) || 'U'}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] text-ink-100">{profileName}</p>
-                    <p className="text-[10px] text-ink-500">Local identity, isolated session</p>
-                  </div>
-                </div>
-              </SettingsCard>
-
-              <SettingsCard
-                title="Startup prompt"
-                detail="Ask before the browser opens when more than one profile exists."
-              >
-                <SettingRow
-                  label="Ask who is using DevLens on startup"
-                  detail="The identity gate appears before browsing starts."
-                >
-                  <Switch
-                    checked={profileAsk}
-                    testId="settings-page-ask-on-startup"
-                    onChange={onProfileAsk}
-                  />
-                </SettingRow>
-              </SettingsCard>
-            </div>
+            <IdentitySettingsContent
+              profiles={profiles}
+              busy={profilesBusy}
+              askOnStartup={profileAsk}
+              onAskOnStartupChange={onProfileAsk}
+              onSwitch={onProfileSwitch}
+              onCreate={onProfileCreate}
+              onDelete={onProfileDelete}
+            />
           )}
 
           {category === 'about' && (

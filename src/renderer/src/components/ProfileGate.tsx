@@ -1,15 +1,7 @@
 import { useState } from 'react'
-import {
-  Briefcase,
-  FlaskConical,
-  Ghost,
-  Laptop,
-  Plus,
-  ShieldCheck,
-  Star,
-  User
-} from 'lucide-react'
+import { Plus } from 'lucide-react'
 import type { BrowserProfile, ProfileAvatar } from '@shared/types'
+import { PROFILE_AVATARS, ProfileAvatarMark } from '@renderer/components/ProfileAvatarMark'
 
 interface ProfileGateProps {
   profiles: BrowserProfile[]
@@ -19,20 +11,6 @@ interface ProfileGateProps {
   onSelect: (id: string) => void
   onCreate: (name: string, avatar: ProfileAvatar) => void
   onAskOnStartupChange: (ask: boolean) => void
-}
-
-const AVATARS: { id: ProfileAvatar; icon: typeof User }[] = [
-  { id: 'user', icon: User },
-  { id: 'briefcase', icon: Briefcase },
-  { id: 'laptop', icon: Laptop },
-  { id: 'flask', icon: FlaskConical },
-  { id: 'shield', icon: ShieldCheck },
-  { id: 'ghost', icon: Ghost },
-  { id: 'star', icon: Star }
-]
-
-function avatarIcon(profile: BrowserProfile): typeof User {
-  return AVATARS.find((entry) => entry.id === profile.avatar)?.icon ?? User
 }
 
 /** "2 minutes ago", "yesterday" - enough to pick the identity you used last. */
@@ -90,7 +68,6 @@ export function ProfileGate({
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {profiles.map((profile) => {
-            const Icon = avatarIcon(profile)
             return (
               <button
                 key={profile.id}
@@ -107,7 +84,7 @@ export function ProfileGate({
                 ].join(' ')}
               >
                 <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--devlens-hairline)] bg-ink-850 text-ink-200">
-                  <Icon size={16} />
+                  <ProfileAvatarMark avatar={profile.avatar} size={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[12px] text-ink-100">{profile.name}</span>
@@ -154,7 +131,7 @@ export function ProfileGate({
               </button>
             </div>
             <div className="mt-2 flex items-center gap-1.5" role="group" aria-label="Avatar">
-              {AVATARS.map((entry) => {
+              {PROFILE_AVATARS.map((entry) => {
                 const Icon = entry.icon
                 const active = entry.id === avatar
                 return (

@@ -4376,6 +4376,11 @@ export function App() {
                 profileAsk={profileAsk}
                 onProfileAsk={(ask) => void setAskOnStartup(ask)}
                 profileName={profiles.find((profile) => profile.active)?.name ?? 'Default'}
+                profiles={profiles}
+                profilesBusy={profilesBusy}
+                onProfileSwitch={(id) => void switchProfile(id)}
+                onProfileCreate={(name, avatar) => void createProfile(name, avatar)}
+                onProfileDelete={(id) => void deleteProfile(id)}
                 developer={developerPreferences}
                 ideOptions={ideOptions}
                 onDeveloperChange={saveDeveloperPreferences}
