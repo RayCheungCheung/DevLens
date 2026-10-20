@@ -173,6 +173,13 @@ const CATEGORIES: {
   { id: 'about', label: 'About DevLens & System Updates', summary: 'Version, updates and license', icon: Info }
 ]
 
+const AI_PROVIDER_TILE: Record<AiSiteId, { background: string; border: string }> = {
+  gemini: { background: 'rgba(56, 189, 248, 0.11)', border: 'rgba(56, 189, 248, 0.3)' },
+  deepseek: { background: 'rgba(77, 107, 254, 0.13)', border: 'rgba(77, 107, 254, 0.34)' },
+  chatgpt: { background: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.28)' },
+  claude: { background: 'rgba(217, 119, 87, 0.13)', border: 'rgba(217, 119, 87, 0.34)' }
+}
+
 const TOOL_ROWS: { key: keyof ToolbarTools; label: string; detail: string }[] = [
   { key: 'viewport', label: 'Viewport chip', detail: 'Show which viewport a command will reach' },
   { key: 'scrollSync', label: 'Scroll sync', detail: 'Keep the mobile and desktop panes together' },
@@ -1759,9 +1766,10 @@ export function SettingsPage({
                 title="AI assistant provider"
                 detail="Which site the assistant panel opens on, and which brand the dock shows."
               >
-                <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-3">
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                   {AI_SITES.map((site) => {
                     const selected = site.id === aiProvider
+                    const tile = AI_PROVIDER_TILE[site.id]
                     return (
                       <button
                         key={site.id}
@@ -1771,15 +1779,24 @@ export function SettingsPage({
                         data-testid={`settings-provider-${site.id}`}
                         onClick={() => onProviderChange(site.id)}
                         className={[
-                          'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors',
+                          'flex min-h-[58px] items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
                           selected
                             ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
                             : 'border-[var(--devlens-hairline)] hover:bg-white/[0.03]'
                         ].join(' ')}
                       >
-                        <AiMark site={site.id} className="shrink-0 text-current" />
-                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-200">{site.label}</span>
-                        {selected && <Check size={12} className="shrink-0 text-[var(--devlens-accent)]" />}
+                        <span
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-ink-200"
+                          style={{ backgroundColor: tile.background, borderColor: tile.border }}
+                        >
+                          <AiMark
+                            site={site.id}
+                            size={site.id === 'deepseek' || site.id === 'claude' ? 21 : 18}
+                            className="shrink-0"
+                          />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-200">{site.label}</span>
+                        {selected && <Check size={14} className="shrink-0 text-[var(--devlens-accent)]" />}
                       </button>
                     )
                   })}
