@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import type { IdeId, IdeOption } from '@shared/ide'
+import { IDE_BRAND_TILE, ideBrandLogo } from '@shared/ide-brand'
 import { useMenuDismiss } from '@renderer/hooks/useMenuDismiss'
 
 interface IdeSelectProps {
@@ -11,16 +12,36 @@ interface IdeSelectProps {
 }
 
 function EditorIcon({ option }: { option: IdeOption | undefined }) {
-  if (option?.icon) {
-    return (
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-black/25 p-0.5">
-        <img src={option.icon} alt="" className="h-full w-full object-contain" />
-      </span>
-    )
-  }
+  if (!option) return null
+  const badge =
+    option.id === 'vscode-insiders'
+      ? 'bg-[#32d583]'
+      : option.id === 'codebuddycn'
+        ? 'bg-[#ff7a59]'
+        : null
   return (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] font-mono text-[10px] font-semibold uppercase text-[var(--devlens-accent)]">
-      {(option?.label ?? '?').slice(0, 2)}
+    <span
+      className={[
+        'relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_4px_12px_rgba(0,0,0,0.22)]',
+        IDE_BRAND_TILE[option.id]
+      ].join(' ')}
+    >
+      <img
+        src={ideBrandLogo(option.id)}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="h-[23px] w-[23px] select-none object-contain"
+      />
+      {badge && (
+        <span
+          aria-hidden="true"
+          className={[
+            'absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full ring-2 ring-[#0b0d11]',
+            badge
+          ].join(' ')}
+        />
+      )}
     </span>
   )
 }
@@ -134,20 +155,33 @@ export function IdeSelect({ options, value, disabled, onChange }: IdeSelectProps
             setOpen(false)
           }
         }}
-        className="flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-lg border border-[var(--devlens-hairline)] bg-black/20 px-3 py-2 text-left outline-none transition-colors hover:border-white/20 focus-visible:border-[var(--devlens-accent-line)] focus-visible:ring-2 focus-visible:ring-[var(--devlens-accent-soft)] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-black/10"
+        className={[
+          'group flex min-h-[58px] w-full min-w-0 items-center gap-3 rounded-xl border px-3.5 py-2 text-left outline-none transition-all',
+          open
+            ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] shadow-[0_8px_24px_rgba(0,0,0,0.22)]'
+            : 'border-[var(--devlens-hairline)] bg-[var(--devlens-tab)] hover:border-[var(--devlens-hairline-strong)] hover:bg-[var(--devlens-tab-active)]',
+          'focus-visible:border-[var(--devlens-accent-line)] focus-visible:ring-2 focus-visible:ring-[var(--devlens-accent-soft)]',
+          'disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-black/10'
+        ].join(' ')}
       >
         <EditorIcon option={selected} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] text-ink-100">
+          <span className="mb-0.5 block text-[9px] font-medium uppercase tracking-[0.12em] text-ink-500">
+            Open files with
+          </span>
+          <span className="block truncate text-[12px] font-medium text-ink-100">
             {selected?.label ?? 'Choose an editor'}
           </span>
-          <span className="mt-0.5 block truncate text-[9px] text-ink-500">
+          <span className="mt-0.5 block truncate font-mono text-[9px] text-ink-500">
             {selected?.installed ? selected.detail ?? 'Installed editor' : 'Not detected'}
           </span>
         </span>
         <ChevronDown
-          size={14}
-          className={['shrink-0 text-ink-500 transition-transform', open ? 'rotate-180' : ''].join(' ')}
+          size={15}
+          className={[
+            'mr-0.5 shrink-0 text-ink-500 transition-transform duration-200 group-hover:text-ink-300',
+            open ? 'rotate-180' : ''
+          ].join(' ')}
         />
       </button>
 
@@ -156,45 +190,71 @@ export function IdeSelect({ options, value, disabled, onChange }: IdeSelectProps
           id="developer-ide-listbox"
           role="listbox"
           data-testid="developer-ide-listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-72 overflow-y-auto rounded-lg border border-white/15 bg-[#111317] p-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.55)]"
+          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--devlens-tab-active)_97%,var(--devlens-accent)_3%)] shadow-[0_22px_55px_rgba(0,0,0,0.48),0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl"
         >
-          {items.map((option, index) => {
-            const selectedOption = option.id === value
-            return (
-              <button
-                key={option.id}
-                id={`developer-ide-option-${option.id}`}
-                type="button"
-                role="option"
-                data-testid={`developer-ide-option-${option.id}`}
-                aria-selected={selectedOption}
-                disabled={!option.installed}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => choose(option)}
-                className={[
-                  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
-                  index === activeIndex
-                    ? 'bg-white/[0.07]'
-                    : 'bg-transparent',
-                  selectedOption
-                    ? 'ring-1 ring-inset ring-[var(--devlens-accent-line)]'
-                    : ''
-                ].join(' ')}
-              >
-                <EditorIcon option={option} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[11px] text-ink-100">{option.label}</span>
-                  <span className="mt-0.5 block truncate text-[9px] text-ink-500">
-                    {option.installed ? option.detail ?? 'Installed' : 'Not detected'}
+          <div className="flex items-center justify-between border-b border-[var(--devlens-hairline)] px-3.5 py-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-500">
+              Installed on this PC
+            </span>
+            <span className="rounded-full border border-[var(--devlens-hairline)] bg-[var(--devlens-tab)] px-2 py-0.5 font-mono text-[8px] text-ink-400">
+              {items.filter((option) => option.installed).length}
+            </span>
+          </div>
+          <div className="max-h-[318px] overflow-y-auto p-1.5">
+            {items.map((option, index) => {
+              const selectedOption = option.id === value
+              return (
+                <button
+                  key={option.id}
+                  id={`developer-ide-option-${option.id}`}
+                  type="button"
+                  role="option"
+                  data-testid={`developer-ide-option-${option.id}`}
+                  aria-selected={selectedOption}
+                  disabled={!option.installed}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => choose(option)}
+                  className={[
+                    'group/row relative flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                    selectedOption
+                      ? 'bg-[var(--devlens-accent-soft)]'
+                      : index === activeIndex
+                        ? 'bg-white/[0.065]'
+                        : 'bg-transparent hover:bg-white/[0.045]'
+                  ].join(' ')}
+                >
+                  {selectedOption && (
+                    <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[var(--devlens-accent)]" />
+                  )}
+                  <EditorIcon option={option} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11.5px] font-medium text-ink-100">
+                      {option.label}
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-[9px] text-ink-500">
+                      {option.installed ? option.detail ?? 'Installed' : 'Not detected'}
+                    </span>
                   </span>
-                </span>
-                {selectedOption && <Check size={13} className="shrink-0 text-[var(--devlens-accent)]" />}
-              </button>
-            )
-          })}
+                  <span
+                    className={[
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors',
+                      selectedOption
+                        ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent)] text-white'
+                        : 'border-white/10 text-transparent group-hover/row:border-white/20'
+                    ].join(' ')}
+                  >
+                    <Check size={11} strokeWidth={2.5} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
           {items.length === 0 && (
             <p className="px-3 py-4 text-center text-[10px] text-ink-500">No installed editors found.</p>
           )}
+          <div className="border-t border-[var(--devlens-hairline)] px-3.5 py-2 text-[8.5px] text-ink-500">
+            Detected from Windows app registrations
+          </div>
         </div>
       )}
     </div>
