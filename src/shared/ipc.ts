@@ -64,12 +64,20 @@ export const IPC = {
   /* Output ----------------------------------------------------------- */
   /** renderer -> main (invoke): write a text file (report, CSS export, ...). */
   saveTextFile: 'devlens:file:save',
+  /** renderer -> main (invoke): save a remote link or image target. */
+  remoteFileSave: 'devlens:file:save-remote',
+  /** renderer -> main (invoke): fetch a remote image as a data URI. */
+  remoteImageRead: 'devlens:image:read',
+  /** renderer -> main (invoke): copy a remote image to the native clipboard. */
+  remoteImageCopy: 'devlens:image:copy',
   /** renderer -> main (invoke): copy text to the system clipboard. */
   clipboardWrite: 'devlens:clipboard:write',
   /** renderer -> main (invoke): read the system clipboard, so Paste is only offered when it can work. */
   clipboardRead: 'devlens:clipboard:read',
   /** renderer -> main (invoke): run a page command the shell's context menu asked for. */
   pageCommand: 'devlens:page:command',
+  /** renderer -> main (invoke): inspect a guest point or read accessibility facts. */
+  guestInspect: 'devlens:guest:inspect',
   /** renderer -> main (invoke): the current zoom level of a guest, for the menu's zoom row. */
   pageZoom: 'devlens:page:zoom',
   /** renderer -> main (invoke): nudge a guest's logarithmic zoom level. */

@@ -285,7 +285,11 @@ export async function clearProfileData(
  * in-memory session, which is exactly what makes it a useful place to look at something
  * suspicious without letting it near the DevLens session.
  */
-export function openSandboxWindow(url: string, parent?: BrowserWindow | null): { ok: boolean; error: string | null } {
+export function openSandboxWindow(
+  url: string,
+  parent?: BrowserWindow | null,
+  options?: { preview?: boolean }
+): { ok: boolean; error: string | null } {
   try {
     const parsed = new URL(url)
     if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -296,11 +300,11 @@ export function openSandboxWindow(url: string, parent?: BrowserWindow | null): {
     hardenSession(ses, 'sandbox')
 
     const window = new BrowserWindow({
-      width: 1180,
-      height: 820,
+      width: options?.preview ? 720 : 1180,
+      height: options?.preview ? 540 : 820,
       backgroundColor: '#0b0d10',
       autoHideMenuBar: true,
-      title: `DevLens sandbox - ${parsed.host}`,
+      title: `${options?.preview ? 'Link preview' : 'DevLens sandbox'} - ${parsed.host}`,
       ...(parent ? { parent } : {}),
       webPreferences: {
         partition: SANDBOX_PARTITION,

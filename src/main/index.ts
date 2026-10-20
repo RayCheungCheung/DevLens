@@ -42,6 +42,9 @@ import type {
   ResumeRequestPayload,
   SaveTextRequest,
   SaveTextResult,
+  RemoteFileRequest,
+  GuestInspectRequest,
+  GuestInspectResult,
   SessionProfileId,
   WimhState,
   WorkspaceEntry,
@@ -121,6 +124,7 @@ import {
   setRules
 } from './interceptor'
 import { saveTextFile, writeClipboard } from './output'
+import { copyRemoteImage, readRemoteImage, saveRemoteFile } from './context-assets'
 import {
   flushPreferences,
   preferencesNow,
@@ -382,6 +386,22 @@ function registerIpcHandlers(): void {
     )
   })
 
+  ipcMain.handle(
+    IPC.remoteFileSave,
+    async (_event, request: RemoteFileRequest): Promise<SaveTextResult> =>
+      saveRemoteFile(
+        {
+          url: String(request?.url ?? ''),
+          filename: String(request?.filename ?? 'devlens-download'),
+          title: request?.title ? String(request.title) : undefined
+        },
+        config
+      )
+  )
+
+  ipcMain.handle(IPC.remoteImageRead, (_event, url: string) => readRemoteImage(String(url ?? '')))
+  ipcMain.handle(IPC.remoteImageCopy, (_event, url: string) => copyRemoteImage(String(url ?? '')))
+
   // Every DevLens clipboard write goes past the sentinel while extreme mode is on.
   ipcMain.handle(IPC.clipboardWrite, (_event, text: string) => {
     const value = String(text ?? '')
@@ -455,6 +475,59 @@ function registerIpcHandlers(): void {
           return true
         default:
           return false
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.guestInspect,
+    async (_event, input: GuestInspectRequest): Promise<GuestInspectResult> => {
+      const target = input?.webContentsId ? webContents.fromId(input.webContentsId) : null
+      if (!target || target.isDestroyed()) {
+        return { ok: false, summary: null, detail: null, error: 'That page is no longer open.' }
+      }
+      const x = Math.max(0, Math.round(Number(input.x) || 0))
+      const y = Math.max(0, Math.round(Number(input.y) || 0))
+      try {
+        if (input.accessibility) {
+          const facts = await target.executeJavaScript(
+            `(() => {
+              const el = document.elementFromPoint(${x}, ${y})
+              if (!el) return null
+              const role = el.getAttribute('role') || el.tagName.toLowerCase()
+              const name =
+                el.getAttribute('aria-label') ||
+                el.getAttribute('alt') ||
+                el.getAttribute('title') ||
+                (el.textContent || '').trim().slice(0, 160) ||
+                '(unnamed)'
+              const attributes = {}
+              for (const attr of el.attributes) {
+                if (attr.name === 'role' || attr.name.startsWith('aria-')) attributes[attr.name] = attr.value
+              }
+              return { tag: el.tagName.toLowerCase(), role, name, attributes }
+            })()`
+          )
+          if (!facts) {
+            return { ok: false, summary: null, detail: null, error: 'No element at that point.' }
+          }
+          return {
+            ok: true,
+            summary: `${facts.role}: ${facts.name}`,
+            detail: JSON.stringify(facts, null, 2),
+            error: null
+          }
+        }
+        target.openDevTools({ mode: 'detach' })
+        target.inspectElement(x, y)
+        return { ok: true, summary: 'DevTools opened at the clicked element.', detail: null, error: null }
+      } catch (error) {
+        return {
+          ok: false,
+          summary: null,
+          detail: null,
+          error: error instanceof Error ? error.message : String(error)
+        }
       }
     }
   )
@@ -665,13 +738,13 @@ function registerIpcHandlers(): void {
     IPC.bookmarksOpenWindow,
     async (
       _event,
-      input: { url?: string; private?: boolean }
+      input: { url?: string; private?: boolean; preview?: boolean }
     ): Promise<{ ok: boolean; error: string | null }> => {
       const url = String(input?.url ?? '')
       if (!url) return { ok: false, error: 'no address to open' }
       return input?.private
         ? openPrivateWindow(url)
-        : openSandboxWindow(url, shellWindow)
+        : openSandboxWindow(url, shellWindow, { preview: input?.preview === true })
     }
   )
 

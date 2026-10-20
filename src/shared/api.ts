@@ -33,6 +33,10 @@ import type {
   ProtectionState,
   RepeaterRequest,
   RepeaterResponse,
+  RemoteFileRequest,
+  RemoteImageResult,
+  GuestInspectRequest,
+  GuestInspectResult,
   RequestEvent,
   ResumeRequestPayload,
   SaveTextRequest,
@@ -112,6 +116,14 @@ export interface DevLensApi {
    * per viewport.
    */
   pageCommand(input: { webContentsId: number; command: PageCommandKind }): Promise<boolean>
+  /** Opens DevTools at a guest point, or returns accessible role/name facts for that point. */
+  guestInspect(input: GuestInspectRequest): Promise<GuestInspectResult>
+  /** Downloads a link or image target and writes it through the native Save dialog. */
+  remoteFileSave(request: RemoteFileRequest): Promise<SaveTextResult>
+  /** Fetches an image target and returns it as a data URI for clipboard use. */
+  remoteImageRead(url: string): Promise<RemoteImageResult>
+  /** Copies a fetched image to the native image clipboard. */
+  remoteImageCopy(url: string): Promise<{ ok: boolean; error: string | null }>
   /** The guest's current zoom, as a whole percentage; 100 means default. */
   pageZoom(webContentsId: number): Promise<number>
   /** Nudges the guest's logarithmic zoom level and returns the resulting percentage. */
@@ -178,6 +190,7 @@ export interface DevLensApi {
   bookmarksOpenWindow(input: {
     url: string
     private?: boolean
+    preview?: boolean
   }): Promise<{ ok: boolean; error: string | null }>
   /**
    * Picks a bookmark file and merges it in.

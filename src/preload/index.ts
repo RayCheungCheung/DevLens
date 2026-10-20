@@ -38,6 +38,10 @@ import type {
   OpenInIdeResult,
   RepeaterRequest,
   RepeaterResponse,
+  RemoteFileRequest,
+  RemoteImageResult,
+  GuestInspectRequest,
+  GuestInspectResult,
   RequestEvent,
   ResumeRequestPayload,
   SaveTextRequest,
@@ -150,12 +154,20 @@ const api: DevLensApi = {
 
   saveTextFile: (request: SaveTextRequest): Promise<SaveTextResult> =>
     ipcRenderer.invoke(IPC.saveTextFile, request),
+  remoteFileSave: (request: RemoteFileRequest): Promise<SaveTextResult> =>
+    ipcRenderer.invoke(IPC.remoteFileSave, request),
+  remoteImageRead: (url: string): Promise<RemoteImageResult> =>
+    ipcRenderer.invoke(IPC.remoteImageRead, url),
+  remoteImageCopy: (url: string): Promise<{ ok: boolean; error: string | null }> =>
+    ipcRenderer.invoke(IPC.remoteImageCopy, url),
 
   clipboardWrite: (text: string): Promise<boolean> => ipcRenderer.invoke(IPC.clipboardWrite, text),
   clipboardRead: (): Promise<string> => ipcRenderer.invoke(IPC.clipboardRead),
   /** Runs a page command in a guest, addressed by its webContents id. */
   pageCommand: (input: { webContentsId: number; command: PageCommandKind }): Promise<boolean> =>
     ipcRenderer.invoke(IPC.pageCommand, input),
+  guestInspect: (input: GuestInspectRequest): Promise<GuestInspectResult> =>
+    ipcRenderer.invoke(IPC.guestInspect, input),
   pageZoom: (webContentsId: number): Promise<number> =>
     ipcRenderer.invoke(IPC.pageZoom, webContentsId),
   pageZoomBy: (webContentsId: number, delta: number): Promise<number> =>
@@ -221,6 +233,7 @@ const api: DevLensApi = {
   bookmarksOpenWindow: (input: {
     url: string
     private?: boolean
+    preview?: boolean
   }): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke(IPC.bookmarksOpenWindow, input),
   bookmarksImport: (input?: { location?: string; file?: string }): Promise<{

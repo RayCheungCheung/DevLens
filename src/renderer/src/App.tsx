@@ -113,7 +113,7 @@ import { ChangelogPage } from '@renderer/components/ChangelogPage'
 import { DEFAULT_DOWNLOAD_PREFERENCES, type DownloadPreferencesPatch } from '@shared/downloads'
 import { ThemeManagerPage } from '@renderer/components/ThemeManagerPage'
 import { VerticalTabs } from '@renderer/components/VerticalTabs'
-import { PageContextMenu } from '@renderer/components/PageContextMenu'
+import { PageContextMenu, type PageContextAction } from '@renderer/components/PageContextMenu'
 import { DeviceSelector, FoldToggle, resolveDevice } from '@renderer/components/DeviceSelector'
 import { deviceViewport } from '@shared/config'
 import { DEFAULT_MOBILE_SETTINGS, type MobileSettings } from '@shared/preferences'
@@ -218,6 +218,48 @@ const PANEL_COMMAND_NAMES: Record<string, string> = {
   design: '>design',
   interceptor: '>intercept',
   defense: '>defense'
+}
+
+const TRACKING_PARAMETERS = [
+  'fbclid',
+  'gclid',
+  'dclid',
+  'msclkid',
+  'igshid',
+  'yclid',
+  '_hsenc',
+  '_hsmi',
+  'vero_id',
+  'wickedid',
+  's_cid'
+]
+
+function cleanTrackingUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    for (const key of [...url.searchParams.keys()]) {
+      if (
+        key.toLowerCase().startsWith('utm_') ||
+        TRACKING_PARAMETERS.includes(key.toLowerCase())
+      ) {
+        url.searchParams.delete(key)
+      }
+    }
+    return url.toString()
+  } catch {
+    return value
+  }
+}
+
+function suggestedFileName(url: string, fallbackExtension: string): string {
+  try {
+    const parsed = new URL(url)
+    const name = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '')
+    if (name && name.includes('.')) return name
+    return `${parsed.hostname || 'devlens-download'}${fallbackExtension}`
+  } catch {
+    return `devlens-download${fallbackExtension}`
+  }
 }
 
 /* ---------------- bookmark tree helpers ---------------- */
@@ -589,7 +631,12 @@ export function App() {
    * menu itself, and nothing to grey out later.
    */
   const [pageMenu, setPageMenu] = useState<
-    (PageContextMenuPayload & { clipboard: string; guestId: number | null }) | null
+    (PageContextMenuPayload & {
+      clipboard: string
+      guestId: number | null
+      menuX: number
+      menuY: number
+    }) | null
   >(null)
   const [inspection, setInspection] = useState<InspectionState>(EMPTY_INSPECTION)
   /**
@@ -1851,12 +1898,21 @@ export function App() {
    */
   const handleGuestContextMenu = useCallback(
     (tabId: string, viewId: ViewportId, payload: Omit<PageContextMenuPayload, 'viewId'>) => {
-      const guestId = frames.current[tabId]?.[viewId]?.guestId() ?? null
+      const frame = frames.current[tabId]?.[viewId]
+      const guestId = frame?.guestId() ?? null
+      const bounds = frame?.bounds()
       void window.devlens
         .clipboardRead()
         .catch(() => '')
         .then((clipboard) =>
-          setPageMenu({ ...payload, viewId, clipboard, guestId })
+          setPageMenu({
+            ...payload,
+            viewId,
+            clipboard,
+            guestId,
+            menuX: (bounds?.left ?? 0) + payload.x,
+            menuY: (bounds?.top ?? 0) + payload.y
+          })
         )
     },
     []
@@ -1873,6 +1929,139 @@ export function App() {
     },
     [pageMenu?.guestId]
   )
+
+  /** Link, image and inspection actions selected from the page context menu. */
+  function runPageContextAction(action: PageContextAction): void {
+      const guestId = pageMenu?.guestId
+      switch (action.type) {
+        case 'open-link':
+          if (action.mode === 'tab') {
+            openInNewTab(action.url, action.title)
+            return
+          }
+          if (action.mode === 'split') {
+            openInNewTab(action.url, action.title)
+            setActiveView('mobile')
+            showStatus(`opened ${hostOf(action.url)} in split view`)
+            return
+          }
+          if (action.mode === 'container') {
+            void openPrivateTab(action.url, action.title)
+            showStatus(`opened ${hostOf(action.url)} in a new isolated container tab`)
+            return
+          }
+          void window.devlens
+            .bookmarksOpenWindow({
+              url: action.url,
+              private: action.mode === 'private',
+              preview: action.mode === 'preview'
+            })
+            .then((result) =>
+              showStatus(
+                result.ok
+                  ? action.mode === 'preview'
+                    ? `preview window opened for ${hostOf(action.url)}`
+                    : `${action.mode === 'private' ? 'private' : 'new'} window opened for ${hostOf(action.url)}`
+                  : result.error ?? 'could not open a window'
+              )
+            )
+          return
+        case 'bookmark-link':
+          setBookmarkEditor({
+            url: action.url,
+            title: action.title || hostOf(action.url)
+          })
+          return
+        case 'copy-clean-link':
+          void window.devlens
+            .clipboardWrite(cleanTrackingUrl(action.url))
+            .then((ok) => showStatus(ok ? 'clean link copied' : 'could not copy the link'))
+          return
+        case 'save-link':
+        case 'save-image': {
+          const image = action.type === 'save-image'
+          void window.devlens
+            .remoteFileSave({
+              url: action.url,
+              filename: suggestedFileName(action.url, image ? '.png' : '.html'),
+              title: image ? 'Save image from DevLens' : 'Save link from DevLens'
+            })
+            .then((result) => {
+              if (result.cancelled) return
+              showStatus(
+                result.ok
+                  ? `${image ? 'image' : 'link'} saved to ${result.path}`
+                  : result.error ?? 'could not save the download'
+              )
+            })
+          return
+        }
+        case 'copy-image':
+          void window.devlens.remoteImageCopy(action.url).then((result) =>
+            showStatus(result.ok ? 'image copied' : result.error ?? 'could not copy the image')
+          )
+          return
+        case 'copy-image-data':
+          void window.devlens.remoteImageRead(action.url).then(async (result) => {
+            if (!result.ok || !result.dataUri) {
+              showStatus(result.error ?? 'could not read the image')
+              return
+            }
+            const copied = await window.devlens.clipboardWrite(result.dataUri)
+            showStatus(copied ? 'image copied as a data URI' : 'could not copy the data URI')
+          })
+          return
+        case 'inspect-element':
+        case 'inspect-accessibility':
+          if (!guestId) {
+            showStatus('that page is no longer open')
+            return
+          }
+          void window.devlens
+            .guestInspect({
+              webContentsId: guestId,
+              x: action.x,
+              y: action.y,
+              accessibility: action.type === 'inspect-accessibility'
+            })
+            .then(async (result) => {
+              if (!result.ok) {
+                showStatus(result.error ?? 'could not inspect that element')
+                return
+              }
+              if (action.type === 'inspect-accessibility' && result.detail) {
+                await window.devlens.clipboardWrite(result.detail)
+                showStatus(`${result.summary ?? 'accessibility data'} - copied details`)
+                return
+              }
+              showStatus(result.summary ?? 'DevTools opened')
+            })
+          return
+        case 'translate-link': {
+          const target = navigator.language || 'en'
+          const translateUrl =
+            `https://translate.google.com/?sl=auto&tl=${encodeURIComponent(target)}` +
+            `&text=${encodeURIComponent(action.text)}&op=translate`
+          openInNewTab(translateUrl, 'Translate link text')
+          return
+        }
+        case 'ask-ai': {
+          const prompt =
+            `Review this link for a developer:\n${action.title}\n${action.url}\n\n` +
+            'Explain what it is, the parts worth knowing before opening it, and any risks or fragile details.'
+          void window.devlens.clipboardWrite(prompt).then((ok) => {
+            setActivePanel('ai')
+            setSidebarOpen(true)
+            showStatus(
+              ok
+                ? 'link context copied - ask the AI assistant to review it'
+                : 'AI assistant opened, but the link prompt could not be copied'
+            )
+          })
+          return
+        }
+      }
+  }
 
   /** Files a viewport update under the tab that owns it, so tabs cannot overwrite each other. */
   const patchTabStatus = useCallback(
@@ -4413,7 +4602,9 @@ export function App() {
                   canGoBack: Boolean(activeStatuses[pageMenu.viewId].canGoBack),
                   canGoForward: Boolean(activeStatuses[pageMenu.viewId].canGoForward),
                   dev: mode === 'dev',
-                  pageUrl: activeStatuses[pageMenu.viewId].url || startUrl || ''
+                  pageUrl: activeStatuses[pageMenu.viewId].url || startUrl || '',
+                  menuX: pageMenu.menuX,
+                  menuY: pageMenu.menuY
                 }}
                 onCommand={runPageCommand}
                 onOpenUrl={(url) => {
@@ -4423,6 +4614,7 @@ export function App() {
                 onCopyText={(text) => {
                   void window.devlens.clipboardWrite(text)
                 }}
+                onAction={runPageContextAction}
                 onClose={() => setPageMenu(null)}
               />
             )}

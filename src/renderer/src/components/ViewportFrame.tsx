@@ -51,6 +51,8 @@ export interface ViewportHandle {
   setAudioMuted: (muted: boolean) => void
   /** This guest's `webContents` id, for commands main has to run *in* the page. */
   guestId: () => number | null
+  /** Guest viewport position in shell coordinates, used to place page menus. */
+  bounds: () => { left: number; top: number } | null
   /**
    * Run a script in the page's own context and resolve with its answer.
    *
@@ -380,6 +382,10 @@ export const ViewportFrame = forwardRef<ViewportHandle, ViewportFrameProps>(func
         } catch {
           return null
         }
+      },
+      bounds: () => {
+        const rect = webviewRef.current?.getBoundingClientRect()
+        return rect ? { left: rect.left, top: rect.top } : null
       },
       evaluate: (script: string) => {
         const guest = webviewRef.current

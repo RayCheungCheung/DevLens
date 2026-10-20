@@ -593,14 +593,18 @@ window.addEventListener(
     const editable = target?.closest?.(
       'input, textarea, [contenteditable=""], [contenteditable="true"]'
     )
+    const sized = media as (HTMLImageElement & HTMLVideoElement) | null
     ipcRenderer.sendToHost(CONTEXT_MENU_CHANNEL, {
       x: event.clientX,
       y: event.clientY,
       selection: window.getSelection()?.toString() ?? '',
       editable: Boolean(editable),
       linkUrl: anchor?.href ?? null,
+      linkText: anchor?.textContent?.trim().replace(/\s+/g, ' ').slice(0, 300) || null,
       mediaUrl: media ? media.currentSrc || media.src || null : null,
-      mediaKind: media ? media.tagName.toLowerCase() : null
+      mediaKind: media ? media.tagName.toLowerCase() : null,
+      mediaWidth: sized ? Math.round(sized.naturalWidth || sized.videoWidth || 0) || null : null,
+      mediaHeight: sized ? Math.round(sized.naturalHeight || sized.videoHeight || 0) || null : null
     })
   },
   true

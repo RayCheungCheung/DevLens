@@ -504,10 +504,41 @@ export interface PageContextMenuPayload {
   editable: boolean
   /** The resolved URL of the nearest `<a href>`, if the click landed in one. */
   linkUrl: string | null
+  /** The visible text of the nearest link, used by translation and bookmarking. */
+  linkText: string | null
   /** The resolved `src` of the nearest media element, if the click landed on one. */
   mediaUrl: string | null
   /** `img` / `video` / `audio`, or null. */
   mediaKind: string | null
+  /** Natural dimensions for image-like media, when the page exposes them. */
+  mediaWidth: number | null
+  mediaHeight: number | null
+}
+
+export interface GuestInspectRequest {
+  webContentsId: number
+  x: number
+  y: number
+  accessibility?: boolean
+}
+
+export interface GuestInspectResult {
+  ok: boolean
+  summary: string | null
+  detail: string | null
+  error: string | null
+}
+
+export interface RemoteFileRequest {
+  url: string
+  filename: string
+  title?: string
+}
+
+export interface RemoteImageResult {
+  ok: boolean
+  dataUri: string | null
+  error: string | null
 }
 
 /** Page commands the shell's context menu can ask main to run in a guest. */
