@@ -2,12 +2,14 @@ import { session, type Session } from 'electron'
 import type {
   ClearBrowsingDataRequest,
   ClearBrowsingDataResult,
+  HistoryPolicy,
   PrivacyPreferences,
   RetentionPeriod
 } from '../shared/privacy'
 import { activeProfilePartition } from './profiles'
 import { preferencesNow, setPreferences } from './preferences'
 import { flushHistory, historyClear, historyKeepOrigins, historyPrune } from './history'
+import { listBookmarks } from './bookmarks'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const STORAGE_TYPES = [
@@ -42,17 +44,23 @@ function exceptionOrigins(): string[] {
   return originsFor(preferencesNow().privacy.browsingDataExceptions)
 }
 
-function pinnedOrigins(): string[] {
-  const pinned = preferencesNow().launchpad.session.tabs.filter((tab) => tab.pinned === true)
-  return originsFor(
-    pinned.flatMap((tab) => {
+function customHistoryOrigins(policy: HistoryPolicy): string[] {
+  const urls = preferencesNow()
+    .launchpad.session.tabs.filter((tab) => tab.pinned === true)
+    .flatMap((tab) => {
       try {
         return [new URL(tab.url).origin]
       } catch {
         return []
       }
     })
-  )
+  if (policy === 'pinned-bookmarks' || policy === 'pinned-bookmarks-exceptions') {
+    urls.push(...listBookmarks().map((bookmark) => bookmark.url))
+  }
+  if (policy === 'pinned-exceptions' || policy === 'pinned-bookmarks-exceptions') {
+    urls.push(...preferencesNow().privacy.browsingDataExceptions)
+  }
+  return originsFor(urls)
 }
 
 async function clearStorageExcept(ses: Session, excludeOrigins: string[]): Promise<void> {
@@ -168,8 +176,13 @@ export async function cleanupOnExit(): Promise<void> {
   const privacy = preferencesNow().privacy
   const ses = activeSession()
   try {
-    if (privacy.historyPolicy === 'pinned') {
-      const keep = pinnedOrigins()
+    if (
+      privacy.historyPolicy === 'pinned' ||
+      privacy.historyPolicy === 'pinned-bookmarks' ||
+      privacy.historyPolicy === 'pinned-exceptions' ||
+      privacy.historyPolicy === 'pinned-bookmarks-exceptions'
+    ) {
+      const keep = customHistoryOrigins(privacy.historyPolicy)
       await clearCookiesExcept(ses, keep)
       await clearStorageExcept(ses, keep)
       historyKeepOrigins(keep)
@@ -194,6 +207,9 @@ export function needsExitCleanup(): boolean {
   return (
     privacy.autoClearOnExit ||
     privacy.historyPolicy === 'pinned' ||
+    privacy.historyPolicy === 'pinned-bookmarks' ||
+    privacy.historyPolicy === 'pinned-exceptions' ||
+    privacy.historyPolicy === 'pinned-bookmarks-exceptions' ||
     privacy.historyPolicy === 'never' ||
     privacy.cookieExpiry === 'on-close' ||
     privacy.cacheExpiry === 'on-close' ||

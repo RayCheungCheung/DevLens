@@ -1,7 +1,13 @@
 /** Persistent DevLens Shield and privacy settings for one profile. */
 
 export type ShieldMode = 'standard' | 'strict'
-export type HistoryPolicy = 'remember' | 'never' | 'pinned'
+export type HistoryPolicy =
+  | 'remember'
+  | 'never'
+  | 'pinned'
+  | 'pinned-bookmarks'
+  | 'pinned-exceptions'
+  | 'pinned-bookmarks-exceptions'
 export type RetentionPeriod = 'forever' | '7d' | '30d' | '90d' | 'on-close'
 export type DnsMode = 'system' | 'secure' | 'off'
 

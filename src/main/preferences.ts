@@ -345,7 +345,11 @@ function sanitizePrivacy(input: Partial<PrivacyPreferences> | undefined): Privac
     dataUsedGb: Number.isFinite(used) ? Math.max(0, Number(used)) : 0,
     autoClearOnExit: input?.autoClearOnExit === true,
     historyPolicy:
-      input?.historyPolicy === 'never' || input?.historyPolicy === 'pinned'
+      input?.historyPolicy === 'never' ||
+      input?.historyPolicy === 'pinned' ||
+      input?.historyPolicy === 'pinned-bookmarks' ||
+      input?.historyPolicy === 'pinned-exceptions' ||
+      input?.historyPolicy === 'pinned-bookmarks-exceptions'
         ? input.historyPolicy
         : legacy?.historyRetention === 'incognito'
           ? 'never'

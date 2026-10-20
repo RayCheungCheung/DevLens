@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ShieldOff, Trash2, X } from 'lucide-react'
 import { ToggleSwitch as Toggle } from '@renderer/components/ToggleSwitch'
+import { HistoryPolicySelect } from '@renderer/components/HistoryPolicySelect'
 import type {
   ClearBrowsingDataRequest,
   ClearBrowsingDataResult,
@@ -27,24 +28,6 @@ const EXPIRY_OPTIONS: { value: RetentionPeriod; label: string }[] = [
   { value: '30d', label: '30 days' },
   { value: '90d', label: '90 days' },
   { value: 'on-close', label: 'On Close' }
-]
-
-const HISTORY_POLICIES: { value: HistoryPolicy; label: string; detail: string }[] = [
-  {
-    value: 'remember',
-    label: 'Remember history',
-    detail: 'Keep visits until an expiration rule removes older entries.'
-  },
-  {
-    value: 'never',
-    label: 'Never remember history',
-    detail: 'Stop writing history and clear existing history immediately.'
-  },
-  {
-    value: 'pinned',
-    label: 'Custom history (Keep Pinned Tabs Only)',
-    detail: 'On close, keep history and site data only for pinned tab origins.'
-  }
 ]
 
 function formatBytes(bytes: number): string {
@@ -116,11 +99,11 @@ export function BrowsingDataSettingsContent({
 
   return (
     <>
-      <section className="overflow-hidden rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018]">
+      <section className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018]">
         <div className="border-b border-[var(--devlens-hairline)] px-4 py-3">
           <h3 className="text-[12px] font-medium text-ink-100">Browsing Data &amp; History Retention</h3>
           <p className="mt-0.5 text-[10px] leading-4 text-ink-500">
-            Control storage, cleanup rules and how pinned tabs survive a restart.
+            Control storage, cleanup rules and which page groups survive a close.
           </p>
         </div>
         <div className="divide-y divide-white/[0.05] px-4">
@@ -179,35 +162,8 @@ export function BrowsingDataSettingsContent({
           <div className="py-4">
             <p className="text-[11px] text-ink-200">History Policies</p>
             <p className="mt-0.5 text-[10px] text-ink-500">Choose what DevLens may remember between sessions.</p>
-            <div className="mt-3 flex flex-col gap-2" role="radiogroup" aria-label="History policies">
-              {HISTORY_POLICIES.map((policy) => {
-                const selected = privacy.historyPolicy === policy.value
-                return (
-                  <label
-                    key={policy.value}
-                    className={[
-                      'flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5',
-                      selected
-                        ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
-                        : 'border-[var(--devlens-hairline)] hover:bg-white/[0.025]'
-                    ].join(' ')}
-                  >
-                    <input
-                      type="radio"
-                      name="history-policy"
-                      value={policy.value}
-                      checked={selected}
-                      data-testid={`privacy-history-policy-${policy.value}`}
-                      onChange={() => onHistoryPolicy(policy.value)}
-                      className="mt-0.5 accent-[var(--devlens-accent)]"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-[11px] text-ink-200">{policy.label}</span>
-                      <span className="mt-0.5 block text-[10px] leading-4 text-ink-500">{policy.detail}</span>
-                    </span>
-                  </label>
-                )
-              })}
+            <div className="mt-3">
+              <HistoryPolicySelect value={privacy.historyPolicy} onChange={onHistoryPolicy} />
             </div>
           </div>
 
