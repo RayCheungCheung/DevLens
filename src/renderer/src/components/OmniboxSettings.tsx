@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
 import {
-  Check,
-  ChevronDown,
   GripVertical,
   Link2,
   ListFilter,
@@ -21,6 +19,7 @@ import {
 } from '@shared/omnibox-settings'
 import { FaviconMark, MARK_BOX, PrefixMark } from '@renderer/components/PrefixIcons'
 import { AddEngineModal } from '@renderer/components/AddEngineModal'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 interface OmniboxSettingsContentProps {
   settings: OmniboxSettings
@@ -191,7 +190,6 @@ export function OmniboxSettingsContent({
   onChange,
   favicons
 }: OmniboxSettingsContentProps) {
-  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [draggingIndex, setDraggingIndex] = useState(-1)
   const [dragOverIndex, setDragOverIndex] = useState(-1)
   const [modal, setModal] = useState<{
@@ -287,63 +285,28 @@ export function OmniboxSettingsContent({
           <span className="font-mono">#</span> prefix still wins.
         </p>
 
-        <div className="relative mt-3 w-fit">
-          <button
-            type="button"
-            data-testid="default-engine-trigger"
-            aria-haspopup="listbox"
-            aria-expanded={dropdownOpen}
-            disabled={!current}
-            onClick={() => setDropdownOpen((open) => !open)}
-            className="flex h-9 min-w-[15rem] items-center gap-2 rounded-md border border-[var(--devlens-hairline)] bg-black/40 px-2 text-left hover:border-[var(--devlens-accent-line)] disabled:cursor-not-allowed"
-          >
-            {current ? <EntryMark entry={current} favicons={favicons} /> : <Search size={14} />}
-            <span className="min-w-0 flex-1 text-[13px] text-ink-100">
-              {current?.label ?? 'No search engine configured'}
-            </span>
-            <ChevronDown size={12} className={dropdownOpen ? 'rotate-180 text-ink-300' : 'text-ink-400'} />
-          </button>
-
-          {dropdownOpen && (
-            <ul
-              role="listbox"
-              aria-label="Default search engine"
-              data-testid="default-engine-list"
-              className="absolute top-[calc(100%+6px)] left-0 z-40 w-[18rem] overflow-hidden rounded-lg border border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-950)_98%,transparent)] py-1 shadow-2xl"
-            >
-              {settings.engines.map((entry) => {
-                const active = entry.id === current?.id
-                return (
-                  <li key={entry.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={active}
-                      data-testid={`default-engine-option-${entry.builtInEngine ?? entry.id}`}
-                      onClick={() => {
-                        patch({ defaultEngine: entry.id })
-                        setDropdownOpen(false)
-                      }}
-                      className={[
-                        'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                        active ? 'bg-[var(--devlens-accent-soft)]' : 'hover:bg-white/[0.04]'
-                      ].join(' ')}
-                    >
-                      <EntryMark entry={entry} favicons={favicons} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px] break-words text-ink-100">{entry.label}</span>
-                        <span className="block font-mono text-[11px] text-ink-400">
-                          @{entry.keyword}
-                        </span>
-                      </span>
-                      {active && <Check size={12} className="shrink-0 text-[var(--devlens-accent)]" />}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
+        <SelectMenu
+          ariaLabel="Default search engine"
+          testId="default-engine-trigger"
+          listTestId="default-engine-list"
+          optionTestIdPrefix="default-engine-option"
+          value={current?.id ?? ''}
+          onChange={(id) => patch({ defaultEngine: id })}
+          disabled={!current}
+          className="mt-3 w-[18rem]"
+          menuWidth={300}
+          sections={[
+            {
+              options: settings.engines.map((entry) => ({
+                value: entry.id,
+                id: entry.builtInEngine ?? entry.id,
+                label: entry.label,
+                description: `@${entry.keyword}`,
+                icon: <EntryMark entry={entry} favicons={favicons} />
+              }))
+            }
+          ]}
+        />
 
         <div className="mt-4 flex flex-col gap-2">
           <label className="flex items-center gap-2 text-[12px] text-ink-200">

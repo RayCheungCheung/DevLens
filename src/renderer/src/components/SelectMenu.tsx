@@ -5,6 +5,8 @@ import { useMenuDismiss } from '@renderer/hooks/useMenuDismiss'
 
 export interface SelectOption {
   value: string
+  /** Stable DOM identity when the stored value contains shell-only prefixes. */
+  id?: string
   label: string
   description?: string
   icon?: ReactNode
@@ -27,6 +29,8 @@ interface SelectMenuProps {
   size?: 'sm' | 'md'
   className?: string
   menuWidth?: number
+  listTestId?: string
+  optionTestIdPrefix?: string
 }
 
 const SAFE_ID = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -41,7 +45,9 @@ export function SelectMenu({
   disabled = false,
   size = 'md',
   className = '',
-  menuWidth = 240
+  menuWidth = 240,
+  listTestId,
+  optionTestIdPrefix
 }: SelectMenuProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -56,6 +62,8 @@ export function SelectMenu({
 
   const items = useMemo(() => sections.flatMap((section) => section.options), [sections])
   const selected = items.find((option) => option.value === value)
+  const listId = listTestId ?? `${testId}-listbox`
+  const optionPrefix = optionTestIdPrefix ?? `${testId}-option`
 
   useMenuDismiss({
     ref: [triggerRef, menuRef],
@@ -123,10 +131,10 @@ export function SelectMenu({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-controls={`${testId}-listbox`}
+        aria-controls={listId}
         aria-activedescendant={
           open && items[activeIndex]
-            ? `${testId}-option-${SAFE_ID(items[activeIndex].value)}`
+            ? `${optionPrefix}-${SAFE_ID(items[activeIndex].id ?? items[activeIndex].value)}`
             : undefined
         }
         disabled={disabled}
@@ -195,9 +203,9 @@ export function SelectMenu({
         createPortal(
           <div
             ref={menuRef}
-            id={`${testId}-listbox`}
+            id={listId}
             role="listbox"
-            data-testid={`${testId}-listbox`}
+            data-testid={listId}
             style={{
               left: position.left,
               top: position.top,
@@ -222,10 +230,10 @@ export function SelectMenu({
                   return (
                     <button
                       key={option.value}
-                      id={`${testId}-option-${SAFE_ID(option.value)}`}
+                      id={`${optionPrefix}-${SAFE_ID(option.id ?? option.value)}`}
                       type="button"
                       role="option"
-                      data-testid={`${testId}-option-${SAFE_ID(option.value)}`}
+                      data-testid={`${optionPrefix}-${SAFE_ID(option.id ?? option.value)}`}
                       aria-selected={selectedOption}
                       disabled={option.disabled}
                       onMouseEnter={() => setActiveIndex(index)}
