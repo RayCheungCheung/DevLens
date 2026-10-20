@@ -9,6 +9,7 @@ import {
   type FileHandlerAction
 } from '@shared/downloads'
 import { ToggleSwitch } from '@renderer/components/ToggleSwitch'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 interface DownloadsSettingsProps {
   preferences: DownloadPreferences
@@ -107,10 +108,25 @@ export function DownloadsSettingsContent({ preferences, onChange }: DownloadsSet
                       <span className="mt-0.5 block break-all font-mono text-[9px] text-ink-500">{type.includes('/') ? type : `${type}: protocol`}</span>
                     </td>
                     <td className="px-3 py-2">
-                      <select aria-label={`Action for ${type}`} value={action} className={`${inputClass} w-full`}
-                        onChange={(event) => onChange({ handlers: { [type]: event.target.value as FileHandlerAction } })}>
-                        {actionsForContentType(type).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      <SelectMenu
+                        ariaLabel={`Action for ${type}`}
+                        testId={`download-handler-${type.replace(/[^a-z0-9]+/gi, '-')}`}
+                        value={action}
+                        onChange={(value) =>
+                          onChange({ handlers: { [type]: value as FileHandlerAction } })
+                        }
+                        size="sm"
+                        className="w-full"
+                        menuWidth={210}
+                        sections={[
+                          {
+                            options: actionsForContentType(type).map((option) => ({
+                              value: option.value,
+                              label: option.label
+                            }))
+                          }
+                        ]}
+                      />
                     </td>
                     <td className="pr-2">
                       {!builtinTypes.has(type) && <button type="button" aria-label={`Remove ${type}`} onClick={() => onChange({ handlers: { [type]: null } })}

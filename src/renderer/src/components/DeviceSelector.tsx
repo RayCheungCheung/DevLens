@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Bookmark, Ruler, Save, Trash2 } from 'lucide-react'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 import {
   DEVICE_FAMILIES,
   MOBILE_DEVICES,
@@ -58,31 +59,37 @@ export function DeviceSelector({ settings, onChange, active }: DeviceSelectorPro
       data-testid="device-selector"
       data-device={active.id}
     >
-      <select
+      <SelectMenu
+        ariaLabel="Device preset"
+        testId="device-preset"
         value={settings.deviceId.startsWith('saved:') ? 'custom' : active.id}
-        onChange={(event) => onChange({ deviceId: event.target.value })}
-        aria-label="Device preset"
-        data-testid="device-preset"
-        className="h-6 max-w-[190px] rounded border border-white/10 bg-neutral-950/70 px-1 font-mono text-[10px] text-neutral-300 outline-none hover:border-white/20"
-      >
-        {DEVICE_FAMILIES.filter((family) => family.id !== 'custom').map((family) => (
-          <optgroup key={family.id} label={family.label}>
-            {MOBILE_DEVICES.filter((entry) => entry.family === family.id).map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-        <optgroup label="Custom">
-          <option value="custom">Free size ({settings.custom.width}x{settings.custom.height})</option>
-          {settings.saved.map((preset) => (
-            <option key={preset.label} value={`saved:${preset.label}`}>
-              {preset.label} ({preset.width}x{preset.height})
-            </option>
-          ))}
-        </optgroup>
-      </select>
+        onChange={(value) => onChange({ deviceId: value })}
+        size="sm"
+        className="max-w-[210px] font-mono"
+        menuWidth={260}
+        sections={[
+          ...DEVICE_FAMILIES.filter((family) => family.id !== 'custom').map((family) => ({
+            label: family.label,
+            options: MOBILE_DEVICES.filter((entry) => entry.family === family.id).map((entry) => ({
+              value: entry.id,
+              label: entry.label
+            }))
+          })),
+          {
+            label: 'Custom',
+            options: [
+              {
+                value: 'custom',
+                label: `Free size (${settings.custom.width}x${settings.custom.height})`
+              },
+              ...settings.saved.map((preset) => ({
+                value: `saved:${preset.label}`,
+                label: `${preset.label} (${preset.width}x${preset.height})`
+              }))
+            ]
+          }
+        ]}
+      />
 
       {/* The free-size controls, shown when the custom entry is the active one. */}
       {active.family === 'custom' && (

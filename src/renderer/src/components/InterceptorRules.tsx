@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import type { InterceptorRule, InterceptorRuleKind } from '@shared/types'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 interface InterceptorRulesProps {
   rules: InterceptorRule[]
@@ -124,27 +125,32 @@ export function InterceptorRules({
 
           <div className="space-y-1 rounded border border-dashed border-white/15 p-2">
             <div className="flex items-center gap-1">
-              <select
+              <SelectMenu
+                ariaLabel="Rule kind"
+                testId="interceptor-rule-kind"
                 value={draft.kind}
-                onChange={(event) =>
+                onChange={(value) =>
                   setDraft((current) => ({
                     ...current,
-                    kind: event.target.value as InterceptorRuleKind,
+                    kind: value as InterceptorRuleKind,
                     // Fields belong to a kind: never carry a header into a redirect draft.
                     header: '',
                     value: '',
                     target: ''
                   }))
                 }
-                aria-label="Rule kind"
-                className="h-6 shrink-0 rounded border border-white/10 bg-neutral-950/70 px-1 font-mono text-[10px] text-neutral-300 outline-none"
-              >
-                {KINDS.map((kind) => (
-                  <option key={kind.id} value={kind.id}>
-                    {kind.label}
-                  </option>
-                ))}
-              </select>
+                size="sm"
+                className="w-[110px] shrink-0 font-mono"
+                menuWidth={180}
+                sections={[
+                  {
+                    options: KINDS.map((kind) => ({
+                      value: kind.id,
+                      label: kind.label
+                    }))
+                  }
+                ]}
+              />
               <input
                 value={draft.pattern}
                 spellCheck={false}

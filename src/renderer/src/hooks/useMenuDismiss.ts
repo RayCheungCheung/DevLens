@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from 'react'
 
 interface MenuDismissOptions {
   /** The menu's own element: a press inside it belongs to the menu, not to the dismissal. */
-  ref: RefObject<HTMLElement | null>
+  ref: RefObject<HTMLElement | null> | RefObject<HTMLElement | null>[]
   onClose: () => void
   /** Set false for a menu that must survive losing window focus (none currently do). */
   closeOnBlur?: boolean
@@ -45,8 +45,14 @@ export function useMenuDismiss({ ref, onClose, closeOnBlur = true }: MenuDismiss
 
     const inside = (target: EventTarget | null): boolean => {
       const node = target as Node | null
-      const element = ref.current
-      return Boolean(element && node && (element === node || element.contains(node)))
+      const elements = Array.isArray(ref) ? ref : [ref]
+      return Boolean(
+        node &&
+          elements.some((entry) => {
+            const element = entry.current
+            return Boolean(element && (element === node || element.contains(node)))
+          })
+      )
     }
 
     const onPointerDown = (event: Event): void => {

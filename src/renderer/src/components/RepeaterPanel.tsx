@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Copy, Loader2, RotateCcw, Send } from 'lucide-react'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 import type { RepeaterRequest, RepeaterResponse } from '@shared/types'
 import { HeaderPairsEditor } from '@renderer/components/HeaderPairs'
 
@@ -60,18 +61,23 @@ export function RepeaterPanel({ draft, onDraftChange, response, onResponse }: Re
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 space-y-1.5 border-b border-white/5 px-3 py-2">
         <div className="flex items-center gap-1">
-          <select
+          <SelectMenu
+            ariaLabel="Request method"
+            testId="request-method"
             value={draft.method}
-            onChange={(event) => onDraftChange({ ...draft, method: event.target.value })}
-            aria-label="Request method"
-            className="h-7 shrink-0 rounded border border-white/10 bg-neutral-950/70 px-1 font-mono text-[10px] text-neutral-200 outline-none"
-          >
-            {METHODS.map((method) => (
-              <option key={method} value={method}>
-                {method}
-              </option>
-            ))}
-          </select>
+            onChange={(method) => onDraftChange({ ...draft, method })}
+            size="sm"
+            className="w-[86px] shrink-0 font-mono"
+            menuWidth={140}
+            sections={[
+              {
+                options: METHODS.map((method) => ({
+                  value: method,
+                  label: method
+                }))
+              }
+            ]}
+          />
           <input
             value={draft.url}
             spellCheck={false}

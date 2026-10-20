@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FolderPlus, X } from 'lucide-react'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 export interface FolderChoice {
   /** A root id ('toolbar', 'menu', 'other') or a folder id. */
@@ -109,19 +110,23 @@ export function AddFolderModal({ folder, location, choices, onSave, onCancel }: 
             <span className="mb-1 block font-mono text-[10px] tracking-wide text-ink-500 uppercase">
               Location
             </span>
-            <select
-              data-testid="folder-location"
-              aria-label="Folder location"
+            <SelectMenu
+              ariaLabel="Folder location"
+              testId="folder-location"
               value={target}
-              onChange={(event) => setTarget(event.target.value)}
-              className="h-7 w-full rounded-md border border-[var(--devlens-hairline)] bg-ink-900/70 px-1.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-            >
-              {choices.map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.label}
-                </option>
-              ))}
-            </select>
+              onChange={setTarget}
+              size="sm"
+              className="w-full"
+              menuWidth={220}
+              sections={[
+                {
+                  options: choices.map((choice) => ({
+                    value: choice.id,
+                    label: choice.label
+                  }))
+                }
+              ]}
+            />
           </label>
         )}
       </div>

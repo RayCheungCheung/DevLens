@@ -114,6 +114,7 @@ import { DEFAULT_DOWNLOAD_PREFERENCES, type DownloadPreferencesPatch } from '@sh
 import { ThemeManagerPage } from '@renderer/components/ThemeManagerPage'
 import { VerticalTabs } from '@renderer/components/VerticalTabs'
 import { PageContextMenu, type PageContextAction } from '@renderer/components/PageContextMenu'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 import { DeviceSelector, FoldToggle, resolveDevice } from '@renderer/components/DeviceSelector'
 import { deviceViewport } from '@shared/config'
 import { DEFAULT_MOBILE_SETTINGS, type MobileSettings } from '@shared/preferences'
@@ -4443,21 +4444,28 @@ export function App() {
                 devCapabilities={mode === 'dev'}
                 inspectionLease={inspection.source === 'lease'}
                 headerExtras={
-                  <select
-                    value={desktopWidth ?? 'fill'}
-                    onChange={(event) =>
-                      setDesktopWidth(event.target.value === 'fill' ? null : Number(event.target.value))
+                  <SelectMenu
+                    value={String(desktopWidth ?? 'fill')}
+                    onChange={(value) =>
+                      setDesktopWidth(value === 'fill' ? null : Number(value))
                     }
-                    aria-label="Desktop width"
-                    className="h-6 rounded border border-white/10 bg-neutral-950/70 px-1 font-mono text-[10px] text-neutral-300 outline-none hover:border-white/20"
-                  >
-                    <option value="fill">Fill</option>
-                    {DESKTOP_WIDTHS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    ariaLabel="Desktop width"
+                    testId="desktop-width"
+                    size="sm"
+                    className="w-[90px]"
+                    menuWidth={150}
+                    sections={[
+                      {
+                        options: [
+                          { value: 'fill', label: 'Fill' },
+                          ...DESKTOP_WIDTHS.map((option) => ({
+                            value: String(option),
+                            label: String(option)
+                          }))
+                        ]
+                      }
+                    ]}
+                  />
                 }
               />
             </div>

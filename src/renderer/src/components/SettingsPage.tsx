@@ -91,6 +91,7 @@ import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
 import { ToggleSwitch as Switch } from '@renderer/components/ToggleSwitch'
 import { IdentitySettingsContent } from '@renderer/components/IdentitySettings'
 import { StartupTabsSelect } from '@renderer/components/StartupTabsSelect'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -1132,22 +1133,26 @@ export function SettingsPage({
                 detail="Recolor toolbars, tabs and sidebars without changing the website content theme."
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <select
+                  <SelectMenu
+                    ariaLabel="Workspace theme"
+                    testId="appearance-workspace-theme"
                     value={appearance.workspaceTheme}
-                    data-testid="appearance-workspace-theme"
-                    onChange={(event) =>
+                    onChange={(value) =>
                       onAppearance({
-                        workspaceTheme: event.target.value as WorkspaceThemeId
+                        workspaceTheme: value as WorkspaceThemeId
                       })
                     }
-                    className="h-9 min-w-0 flex-1 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-                  >
-                    {WORKSPACE_THEMES.map((theme) => (
-                      <option key={theme.id} value={theme.id}>
-                        {theme.label}
-                      </option>
-                    ))}
-                  </select>
+                    className="min-w-0 flex-1"
+                    menuWidth={230}
+                    sections={[
+                      {
+                        options: WORKSPACE_THEMES.map((theme) => ({
+                          value: theme.id,
+                          label: theme.label
+                        }))
+                      }
+                    ]}
+                  />
                   <button
                     type="button"
                     data-testid="appearance-manage-themes"
@@ -1919,37 +1924,45 @@ export function SettingsPage({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex flex-col gap-1 text-[10px] text-ink-400">
                     Primary Display Language
-                    <select
+                    <SelectMenu
+                      ariaLabel="Primary display language"
+                      testId="languages-primary"
                       value={languages.primaryLanguage}
-                      data-testid="languages-primary"
-                      onChange={(event) =>
-                        onLanguages({ primaryLanguage: event.target.value })
+                      onChange={(value) =>
+                        onLanguages({ primaryLanguage: value })
                       }
-                      className="h-9 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-                    >
-                      {LANGUAGE_OPTIONS.map((language) => (
-                        <option key={language.id} value={language.id}>
-                          {language.label}
-                        </option>
-                      ))}
-                    </select>
+                      className="w-full"
+                      menuWidth={220}
+                      sections={[
+                        {
+                          options: LANGUAGE_OPTIONS.map((language) => ({
+                            value: language.id,
+                            label: language.label
+                          }))
+                        }
+                      ]}
+                    />
                   </label>
                   <label className="flex flex-col gap-1 text-[10px] text-ink-400">
                     Fallback Language
-                    <select
+                    <SelectMenu
+                      ariaLabel="Fallback language"
+                      testId="languages-fallback"
                       value={languages.fallbackLanguage}
-                      data-testid="languages-fallback"
-                      onChange={(event) =>
-                        onLanguages({ fallbackLanguage: event.target.value })
+                      onChange={(value) =>
+                        onLanguages({ fallbackLanguage: value })
                       }
-                      className="h-9 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-                    >
-                      {LANGUAGE_OPTIONS.map((language) => (
-                        <option key={language.id} value={language.id}>
-                          {language.label}
-                        </option>
-                      ))}
-                    </select>
+                      className="w-full"
+                      menuWidth={220}
+                      sections={[
+                        {
+                          options: LANGUAGE_OPTIONS.map((language) => ({
+                            value: language.id,
+                            label: language.label
+                          }))
+                        }
+                      ]}
+                    />
                   </label>
                 </div>
                 <div className="mt-3 divide-y divide-white/[0.05]">
@@ -2044,18 +2057,23 @@ export function SettingsPage({
                   ))}
                 </ol>
                 <div className="mt-2 flex items-center gap-1.5">
-                  <select
+                  <SelectMenu
+                    ariaLabel="Language to add"
+                    testId="languages-web-language-draft"
                     value={webLanguageDraft}
-                    aria-label="Language to add"
-                    onChange={(event) => setWebLanguageDraft(event.target.value)}
-                    className="h-8 min-w-0 flex-1 rounded border border-[var(--devlens-hairline)] bg-ink-900 px-2 text-[10px] text-ink-200"
-                  >
-                    {LANGUAGE_OPTIONS.map((language) => (
-                      <option key={language.id} value={language.id}>
-                        {language.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setWebLanguageDraft}
+                    size="sm"
+                    className="min-w-0 flex-1"
+                    menuWidth={220}
+                    sections={[
+                      {
+                        options: LANGUAGE_OPTIONS.map((language) => ({
+                          value: language.id,
+                          label: language.label
+                        }))
+                      }
+                    ]}
+                  />
                   <button
                     type="button"
                     onClick={addWebLanguage}

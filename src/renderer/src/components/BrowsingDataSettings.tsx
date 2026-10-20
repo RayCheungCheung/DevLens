@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ShieldOff, Trash2, X } from 'lucide-react'
 import { ToggleSwitch as Toggle } from '@renderer/components/ToggleSwitch'
 import { HistoryPolicySelect } from '@renderer/components/HistoryPolicySelect'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 import type {
   ClearBrowsingDataRequest,
   ClearBrowsingDataResult,
@@ -313,16 +314,23 @@ function ExpirySelect({
   return (
     <label className="flex flex-col gap-1.5 text-[10px] text-ink-400">
       {label}
-      <select
-        data-testid={testId}
+      <SelectMenu
+        testId={testId}
+        ariaLabel={label}
         value={value}
-        onChange={(event) => onChange(event.target.value as RetentionPeriod)}
-        className="h-8 rounded-md border border-[var(--devlens-hairline)] bg-ink-900 px-2.5 text-[10px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-      >
-        {EXPIRY_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+        onChange={(next) => onChange(next as RetentionPeriod)}
+        size="sm"
+        className="w-full"
+        menuWidth={190}
+        sections={[
+          {
+            options: EXPIRY_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label
+            }))
+          }
+        ]}
+      />
     </label>
   )
 }

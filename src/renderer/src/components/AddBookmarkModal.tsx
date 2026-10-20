@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bookmark, Trash2, X } from 'lucide-react'
 import type { BookmarkEntry, BookmarkLocation } from '@shared/types'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 
 interface AddBookmarkModalProps {
   /** The page being saved: its address is fixed, its name and place are not. */
@@ -129,19 +130,23 @@ export function AddBookmarkModal({
           <span className="mb-1 block font-mono text-[10px] tracking-wide text-ink-500 uppercase">
             Location
           </span>
-          <select
-            data-testid="bookmark-location"
-            aria-label="Bookmark location"
+          <SelectMenu
+            ariaLabel="Bookmark location"
+            testId="bookmark-location"
             value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            className="h-7 w-full rounded-md border border-[var(--devlens-hairline)] bg-ink-900/70 px-1.5 text-[11px] text-ink-200 outline-none focus:border-[var(--devlens-accent-line)]"
-          >
-            {locations.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
+            onChange={setLocation}
+            size="sm"
+            className="w-full"
+            menuWidth={220}
+            sections={[
+              {
+                options: locations.map((entry) => ({
+                  value: entry.id,
+                  label: entry.label
+                }))
+              }
+            ]}
+          />
         </label>
 
         <p data-testid="bookmark-url" className="truncate font-mono text-[10px] text-ink-500" title={page.url}>

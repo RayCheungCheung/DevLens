@@ -9,6 +9,7 @@ import {
   Trash2,
   Zap
 } from 'lucide-react'
+import { SelectMenu } from '@renderer/components/SelectMenu'
 import type { WimhEvent, WimhState } from '@shared/types'
 
 interface DefensePanelProps {
@@ -153,23 +154,28 @@ export function DefensePanel({
         <div className="flex items-center gap-1.5">
           <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-neutral-500">
             purge after
-            <select
-              aria-label="Clipboard purge timeout"
-              value={state.clipboard.clearAfterMs}
-              onChange={(event) => onClipboardTtl(Number(event.target.value))}
-              className="rounded border border-white/10 bg-neutral-950/70 px-1 py-0.5 font-mono text-[10px] text-neutral-300 outline-none"
-            >
-              {TTL_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option / 1000}s
-                </option>
-              ))}
-              {!TTL_OPTIONS.includes(state.clipboard.clearAfterMs) && (
-                <option value={state.clipboard.clearAfterMs}>
-                  {Math.round(state.clipboard.clearAfterMs / 1000)}s
-                </option>
-              )}
-            </select>
+            <SelectMenu
+              ariaLabel="Clipboard purge timeout"
+              testId="defense-clipboard-ttl"
+              value={String(state.clipboard.clearAfterMs)}
+              onChange={(value) => onClipboardTtl(Number(value))}
+              size="sm"
+              className="w-[72px] font-mono"
+              menuWidth={120}
+              sections={[
+                {
+                  options: [
+                    ...TTL_OPTIONS,
+                    ...(TTL_OPTIONS.includes(state.clipboard.clearAfterMs)
+                      ? []
+                      : [state.clipboard.clearAfterMs])
+                  ].map((option) => ({
+                    value: String(option),
+                    label: `${option / 1000}s`
+                  }))
+                }
+              ]}
+            />
           </label>
           <button
             type="button"
