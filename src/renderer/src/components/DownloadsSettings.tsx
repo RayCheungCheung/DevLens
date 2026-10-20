@@ -8,6 +8,7 @@ import {
   type DownloadPreferencesPatch,
   type FileHandlerAction
 } from '@shared/downloads'
+import { ToggleSwitch } from '@renderer/components/ToggleSwitch'
 
 interface DownloadsSettingsProps {
   preferences: DownloadPreferences
@@ -169,10 +170,12 @@ function Toggle({ label, detail, checked, testId, onChange }: { label: string; d
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0"><p className="text-[11px] text-ink-200">{label}</p><p className="mt-0.5 text-[10px] leading-4 text-ink-500">{detail}</p></div>
-      <button type="button" role="switch" aria-label={label} aria-checked={checked} data-testid={testId} onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${checked ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent)]' : 'border-white/15 bg-ink-700'}`}>
-        <span aria-hidden="true" className={`absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full transition-transform ${checked ? 'translate-x-4 bg-ink-950' : 'bg-ink-200'}`} />
-      </button>
+      <ToggleSwitch
+        checked={checked}
+        onChange={onChange}
+        testId={testId}
+        ariaLabel={label}
+      />
     </div>
   )
 }

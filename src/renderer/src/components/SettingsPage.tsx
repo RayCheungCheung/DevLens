@@ -88,6 +88,7 @@ import type { DownloadPreferences, DownloadPreferencesPatch } from '@shared/down
 import { AppIconPicker, AppIconPreview } from '@renderer/components/AppIconPicker'
 import { appIconDesign } from '@shared/app-icon-art'
 import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
+import { ToggleSwitch as Switch } from '@renderer/components/ToggleSwitch'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -2128,43 +2129,6 @@ function SettingRow({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
-  )
-}
-
-function Switch({
-  checked,
-  onChange,
-  testId,
-  disabled = false
-}: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  testId: string
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      data-testid={testId}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative h-6 w-10 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-        checked
-          ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent)]'
-          : 'border-white/15 bg-ink-700'
-      ].join(' ')}
-    >
-      <span
-        aria-hidden="true"
-        className={[
-          'absolute top-1 h-4 w-4 rounded-full shadow-sm transition-transform',
-          checked ? 'translate-x-[20px] bg-ink-950' : 'translate-x-1 bg-ink-200'
-        ].join(' ')}
-      />
-    </button>
   )
 }
 

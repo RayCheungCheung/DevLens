@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ShieldOff, Trash2, X } from 'lucide-react'
+import { ToggleSwitch as Toggle } from '@renderer/components/ToggleSwitch'
 import type {
   ClearBrowsingDataRequest,
   ClearBrowsingDataResult,
@@ -367,40 +368,6 @@ function ExpirySelect({
         ))}
       </select>
     </label>
-  )
-}
-
-function Toggle({
-  checked,
-  testId,
-  onChange
-}: {
-  checked: boolean
-  testId: string
-  onChange: (checked: boolean) => void
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      data-testid={testId}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative h-5 w-9 shrink-0 rounded-full border transition-colors',
-        checked
-          ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent)]'
-          : 'border-white/15 bg-ink-700'
-      ].join(' ')}
-    >
-      <span
-        aria-hidden="true"
-        className={[
-          'absolute top-0.5 h-3.5 w-3.5 rounded-full transition-transform',
-          checked ? 'translate-x-[17px] bg-ink-950' : 'translate-x-0.5 bg-ink-200'
-        ].join(' ')}
-      />
-    </button>
   )
 }
 
