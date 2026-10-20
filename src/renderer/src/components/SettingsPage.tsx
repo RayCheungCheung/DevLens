@@ -362,21 +362,21 @@ export function SettingsPage({
       data-testid="settings-page"
       data-settings-category={category}
     >
-      <aside className="flex min-h-0 w-[252px] shrink-0 flex-col overflow-hidden border-r border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-900)_82%,transparent)]">
-        <div className="shrink-0 px-4 pb-4 pt-5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]">
-              <SlidersHorizontal size={16} />
+      <aside className="flex min-h-0 w-[clamp(264px,22vw,304px)] shrink-0 flex-col overflow-hidden border-r border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--color-ink-900)_82%,transparent)]">
+        <div className="shrink-0 px-5 pb-5 pt-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]">
+              <SlidersHorizontal size={19} />
             </span>
             <div className="min-w-0">
-              <h1 className="text-[15px] font-semibold text-ink-100">Settings</h1>
-              <p className="truncate font-mono text-[9px] text-ink-500">
+              <h1 className="text-[17px] font-semibold text-ink-100">Settings</h1>
+              <p className="truncate font-mono text-[10px] text-ink-500">
                 devlens:settings/{category}
               </p>
             </div>
           </div>
-          <label className="mt-4 flex h-8 items-center gap-2 rounded-md border border-[var(--devlens-hairline)] bg-black/20 px-2.5 focus-within:border-[var(--devlens-accent-line)]">
-            <Search size={13} className="shrink-0 text-ink-500" />
+          <label className="mt-5 flex h-10 items-center gap-2.5 rounded-lg border border-[var(--devlens-hairline)] bg-[var(--devlens-tab)] px-3 focus-within:border-[var(--devlens-accent-line)]">
+            <Search size={15} className="shrink-0 text-ink-500" />
             <input
               type="text"
               value={filter}
@@ -384,12 +384,12 @@ export function SettingsPage({
               placeholder="Filter categories"
               aria-label="Filter settings categories"
               data-testid="settings-filter"
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-ink-200 outline-none placeholder:text-ink-600"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-200 outline-none placeholder:text-ink-600"
             />
           </label>
         </div>
 
-        <nav aria-label="Settings categories" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-3">
+        <nav aria-label="Settings categories" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 pb-4">
           {filteredCategories.map((entry) => {
             const Icon = entry.icon
             const selected = entry.id === category
@@ -401,21 +401,21 @@ export function SettingsPage({
                 data-testid={`settings-category-${entry.id}`}
                 onClick={() => onCategoryChange(entry.id)}
                 className={[
-                  'mb-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                  'mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
                   selected
                     ? 'bg-[var(--devlens-accent-soft)] text-ink-100'
                     : 'text-ink-300 hover:bg-white/[0.035] hover:text-ink-100'
                 ].join(' ')}
               >
                 <Icon
-                  size={15}
+                  size={17}
                   className={selected ? 'shrink-0 text-[var(--devlens-accent)]' : 'shrink-0 text-ink-500'}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px]">{entry.label}</span>
-                  <span className="block truncate text-[9px] text-ink-500">{entry.summary}</span>
+                  <span className="block text-[13px] leading-5">{entry.label}</span>
+                  <span className="mt-0.5 block text-[10px] leading-4 text-ink-500">{entry.summary}</span>
                 </span>
-                {selected && <ChevronRight size={12} className="shrink-0 text-ink-500" />}
+                {selected && <ChevronRight size={14} className="shrink-0 text-ink-500" />}
               </button>
             )
           })}
@@ -424,26 +424,26 @@ export function SettingsPage({
           )}
         </nav>
 
-        <div className="shrink-0 border-t border-[var(--devlens-hairline)] px-3 py-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-400/15 font-mono text-[10px] uppercase text-teal-100">
+        <div className="shrink-0 border-t border-[var(--devlens-hairline)] px-4 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-400/15 font-mono text-[11px] uppercase text-teal-100">
               {profileName.slice(0, 1) || 'U'}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[11px] text-ink-200">{profileName}</span>
-              <span className="block text-[9px] text-ink-500">Profile settings are isolated</span>
+              <span className="block truncate text-[12px] text-ink-200">{profileName}</span>
+              <span className="mt-0.5 block text-[10px] text-ink-500">Profile settings are isolated</span>
             </span>
           </div>
         </div>
       </aside>
 
       <div data-testid="settings-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <div className="mx-auto w-full max-w-[880px] px-8 py-7">
-          <header className="mb-5">
-            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--devlens-accent)]">
+        <div className="mx-auto w-full max-w-[980px] px-10 py-9">
+          <header className="mb-7">
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--devlens-accent)]">
               {current.summary}
             </p>
-            <h2 className="mt-1 text-[22px] font-semibold text-ink-100">{category === 'downloads' ? 'DevLens Downloads & File Handlers' : current.label}</h2>
+            <h2 className="mt-1.5 text-[27px] font-semibold text-ink-100">{category === 'downloads' ? 'DevLens Downloads & File Handlers' : current.label}</h2>
           </header>
 
           {category === 'home' && (
@@ -2101,12 +2101,12 @@ function SettingsCard({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-[var(--devlens-hairline)] bg-white/[0.018]">
-      <div className="border-b border-[var(--devlens-hairline)] px-4 py-3">
-        <h3 className="text-[12px] font-medium text-ink-100">{title}</h3>
-        <p className="mt-0.5 text-[10px] leading-4 text-ink-500">{detail}</p>
+    <section className="rounded-xl border border-[var(--devlens-hairline)] bg-white/[0.018]">
+      <div className="border-b border-[var(--devlens-hairline)] px-5 py-4">
+        <h3 className="text-[14px] font-semibold text-ink-100">{title}</h3>
+        <p className="mt-1 text-[11px] leading-5 text-ink-500">{detail}</p>
       </div>
-      <div className="px-4 py-3">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   )
 }
@@ -2121,10 +2121,10 @@ function SettingRow({
   children: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-5 py-2.5 first:pt-0 last:pb-0">
+    <div className="flex items-center justify-between gap-6 py-3.5 first:pt-0 last:pb-0">
       <div className="min-w-0">
-        <p className="text-[11px] text-ink-200">{label}</p>
-        <p className="mt-0.5 text-[10px] leading-4 text-ink-500">{detail}</p>
+        <p className="text-[13px] text-ink-200">{label}</p>
+        <p className="mt-1 text-[11px] leading-5 text-ink-500">{detail}</p>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -2151,7 +2151,7 @@ function Switch({
       data-testid={testId}
       onClick={() => onChange(!checked)}
       className={[
-        'relative h-5 w-9 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        'relative h-6 w-10 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         checked
           ? 'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent)]'
           : 'border-white/15 bg-ink-700'
@@ -2160,8 +2160,8 @@ function Switch({
       <span
         aria-hidden="true"
         className={[
-          'absolute top-0.5 h-3.5 w-3.5 rounded-full shadow-sm transition-transform',
-          checked ? 'translate-x-[17px] bg-ink-950' : 'translate-x-0.5 bg-ink-200'
+          'absolute top-1 h-4 w-4 rounded-full shadow-sm transition-transform',
+          checked ? 'translate-x-[20px] bg-ink-950' : 'translate-x-1 bg-ink-200'
         ].join(' ')}
       />
     </button>
@@ -2195,7 +2195,7 @@ function Segmented({
             aria-checked={selected}
             onClick={() => onChange(option.value)}
             className={[
-              'flex min-w-0 flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[10px] transition-colors',
+              'flex min-w-0 flex-1 items-center justify-center gap-2 px-3.5 py-2.5 text-[11px] transition-colors',
               selected
                 ? 'bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]'
                 : 'text-ink-400 hover:bg-white/[0.035] hover:text-ink-200'
@@ -2220,11 +2220,11 @@ function InfoTile({
   detail: string
 }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-[var(--devlens-hairline)] px-3 py-2.5">
+    <div className="flex items-start gap-3 rounded-lg border border-[var(--devlens-hairline)] px-4 py-3.5">
       <span className="mt-0.5 text-[var(--devlens-accent)]">{icon}</span>
       <span className="min-w-0">
-        <span className="block text-[11px] text-ink-200">{label}</span>
-        <span className="mt-0.5 block text-[10px] leading-4 text-ink-500">{detail}</span>
+        <span className="block text-[13px] text-ink-200">{label}</span>
+        <span className="mt-1 block text-[11px] leading-5 text-ink-500">{detail}</span>
       </span>
     </div>
   )
@@ -2243,13 +2243,13 @@ function ShortcutTile({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-0 items-center gap-2.5 rounded-md border border-[var(--devlens-hairline)] px-3 py-2.5 text-left hover:border-[var(--devlens-accent-line)] hover:bg-white/[0.03]"
+      className="flex min-w-0 items-center gap-3 rounded-lg border border-[var(--devlens-hairline)] px-4 py-3.5 text-left hover:border-[var(--devlens-accent-line)] hover:bg-white/[0.03]"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[10px] text-ink-200">{label}</span>
-        <span className="mt-0.5 block truncate text-[9px] text-ink-500">{detail}</span>
+        <span className="block truncate text-[12px] text-ink-200">{label}</span>
+        <span className="mt-1 block truncate text-[10px] text-ink-500">{detail}</span>
       </span>
-      <ChevronRight size={11} className="shrink-0 text-ink-500" />
+      <ChevronRight size={14} className="shrink-0 text-ink-500" />
     </button>
   )
 }

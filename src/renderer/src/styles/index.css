@@ -177,6 +177,69 @@
   min-height: 42px;
 }
 
+/*
+ * Settings reading scale.
+ *
+ * Firefox's settings page is the reference here: its body copy is comfortable at a glance,
+ * rather than dense developer-tool chrome. The settings surface deliberately uses a slightly
+ * larger scale without enlarging the rest of the browser shell. The selectors target the
+ * utility tokens themselves so every embedded settings panel inherits the same correction.
+ */
+[data-testid='settings-page'] [class~='text-[8.5px]'] {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+[data-testid='settings-page'] [class~='text-[9px]'] {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+[data-testid='settings-page'] [class~='text-[10px]'] {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-testid='settings-page'] [class~='text-[11px]'] {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+[data-testid='settings-page'] [class~='text-[11.5px]'] {
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+[data-testid='settings-page'] [class~='text-[12px]'] {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+[data-testid='settings-page'] [class~='text-[13px]'] {
+  font-size: 15.5px;
+  line-height: 1.45;
+}
+
+[data-testid='settings-page'] [class~='text-[14px]'] {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+[data-testid='settings-page'] [class~='text-[15px]'] {
+  font-size: 19px;
+  line-height: 1.3;
+}
+
+[data-testid='settings-page'] [class~='text-[22px]'] {
+  font-size: 29px;
+  line-height: 1.2;
+}
+
+[data-testid='settings-page'] input:not([type='radio']):not([type='checkbox']):not([type='range']):not([type='file']),
+[data-testid='settings-page'] select {
+  min-height: 2.25rem;
+}
+
 @layer base {
   html,
   body,
