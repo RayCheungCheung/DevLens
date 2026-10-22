@@ -1,4 +1,4 @@
-import { SquareTerminal } from 'lucide-react'
+import { Bug, SquareTerminal } from 'lucide-react'
 import type { WorkspaceMode } from '@shared/mode'
 import type { ViewportId } from '@shared/types'
 import { tailPath } from '@renderer/lib/format'
@@ -22,6 +22,7 @@ interface StatusBarProps {
   workspaceName: string
   mode: WorkspaceMode
   profileName: string
+  onOpenShellDevTools: () => void
   onOpenGuestDevTools: () => void
 }
 
@@ -40,6 +41,7 @@ export function StatusBar({
   workspaceName,
   mode,
   profileName,
+  onOpenShellDevTools,
   onOpenGuestDevTools
 }: StatusBarProps) {
   const dev = mode === 'dev'
@@ -49,13 +51,10 @@ export function StatusBar({
       data-mode={mode}
       className="nova-glass flex h-9 shrink-0 items-center gap-4 border-t px-3 text-[11px] text-ink-500"
     >
-      {/* The mode banner: quiet for normal, accented for dev. */}
+      {/* The mode banner follows the same workspace finish in both modes. */}
       <span
         data-testid="mode-indicator"
-        className={[
-          'flex shrink-0 items-center gap-1.5',
-          dev ? 'text-[var(--devlens-accent)]' : 'text-ink-400'
-        ].join(' ')}
+        className="flex shrink-0 items-center gap-1.5 text-[var(--devlens-accent)]"
       >
         {dev ? 'dev mode - full tooling' : 'Normal Mode (Max Privacy & Immersion)'}
       </span>
@@ -73,7 +72,7 @@ export function StatusBar({
               ? 'bg-rose-400'
               : activeStatus.isLoading
                 ? 'animate-pulse bg-amber-400'
-                : 'bg-teal-400'
+                : 'bg-[var(--devlens-accent)]'
           ].join(' ')}
         />
         {activeStatus.phase === 'idle' && !activeStatus.url ? (
@@ -90,7 +89,7 @@ export function StatusBar({
       {dev && (
         <span data-status-secondary className="flex items-center gap-1.5">
           <span className="text-neutral-600">sync</span>
-          <span className={syncEnabled ? 'text-teal-300' : 'text-neutral-500'}>
+          <span className={syncEnabled ? 'text-[var(--devlens-accent)]' : 'text-neutral-500'}>
             {syncEnabled ? 'on' : 'off'}
           </span>
         </span>
@@ -111,7 +110,7 @@ export function StatusBar({
         </span>
       )}
 
-      {designMode && <span className="text-teal-300">design mode</span>}
+      {designMode && <span className="text-[var(--devlens-accent)]">design mode</span>}
 
       {sessionProfile === 'ghost' && (
         <span className="flex items-center gap-1.5">
@@ -137,14 +136,24 @@ export function StatusBar({
       )}
 
       <span className="ml-auto flex min-w-0 items-center gap-2">
-        {statusMessage && <span className="truncate font-mono text-teal-300">{statusMessage}</span>}
+        {statusMessage && (
+          <span className="truncate font-mono text-[var(--devlens-accent)]">{statusMessage}</span>
+        )}
         {dev && (
-          <IconButton
-            label={`Open DevTools for the ${activeView} viewport`}
-            onClick={onOpenGuestDevTools}
-          >
-            <SquareTerminal size={13} />
-          </IconButton>
+          <>
+            <IconButton
+              label="Open DevLens Developer Tools"
+              onClick={onOpenShellDevTools}
+            >
+              <Bug size={13} />
+            </IconButton>
+            <IconButton
+              label={`Open DevTools for the ${activeView} viewport`}
+              onClick={onOpenGuestDevTools}
+            >
+              <SquareTerminal size={13} />
+            </IconButton>
+          </>
         )}
       </span>
     </footer>

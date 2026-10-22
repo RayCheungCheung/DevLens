@@ -93,6 +93,8 @@ export interface BootstrapPayload {
   ghostPartition: string
   /** In-memory partition used by extreme defense mode. */
   wimhPartition: string
+  /** Persistent partition for the active project workspace. */
+  workspacePartition: string
   /** Engine used when omnibox input is a query rather than an address. */
   searchEngine: 'google' | 'brave' | 'duckduckgo'
   /** How many visited pages to keep for suggestions. */
@@ -186,6 +188,7 @@ export interface AiSignInWindowRequest {
 export interface AiSignInWindowResult {
   ok: boolean
   error?: string
+  external?: boolean
 }
 
 /** Streamed over IPC while a completion is running. */
@@ -263,6 +266,10 @@ export interface CapturedRequest {
   bodyPreview: string | null
   bodyTruncated: boolean
   hasBody: boolean
+  responseHeaders?: HeaderPair[]
+  mimeType?: string | null | null
+  fromCache?: boolean
+  remoteAddress?: string | null
 }
 
 /** A request the operator is holding before it is sent. */
@@ -375,6 +382,20 @@ export interface CookieRecord {
   /** Unix seconds, or null for a cookie that dies with the session. */
   expires: number | null
   sameSite: string
+}
+
+/**
+ * One site permission entry, shown in the SiteProtectionPanel.
+ *
+ * Privacy: we never expose raw values or grants from the native OS dialog;
+ * only the permission key and whether the operator has allowed it in DevLens.
+ */
+export interface PermissionEntry {
+  permission: string
+  /** True when the operator explicitly granted this permission in a previous prompt. */
+  granted: boolean
+  /** Human-readable label for the permission type. */
+  label: string
 }
 
 /** A locally saved page. Bookmarks never leave the machine. */
@@ -696,6 +717,7 @@ export interface WorkspaceEntry {
   framework: string | null
   lastOpenedAt: number
   active: boolean
+  partition: string | null
 }
 
 /* ------------------------------------------------------------------ *
@@ -772,3 +794,114 @@ export type UpdateChannel = 'stable' | 'beta' | 'dev'
 
 /** How updates are applied. */
 export type UpdateStrategy = 'auto' | 'manual' | 'background'
+
+
+/* ------------------------------------------------------------------ *
+ * Threat detection (WImH extreme protection)
+ * ------------------------------------------------------------------ */
+
+/** Kind of threat the analyzer flagged. */
+export type ThreatKind = 'remote-control' | 'screenshot-detected' | 'input-anomaly'
+
+/** Severity classification for protective shield behaviour. */
+export type ThreatSeverity = 'warning' | 'critical'
+
+/** A single threat alert fired by the entropy-based mouse / input analyzer. */
+export interface ThreatAlert {
+  kind: ThreatKind
+  message: string
+  detail: string
+  severity: ThreatSeverity
+  timestamp: number
+}
+
+/** Live snapshot of the threat-detection engine for the renderer shield. */
+export interface ThreatState {
+  alert: ThreatAlert | null
+  locked: boolean
+  reason: string
+}
+
+/* ------------------------------------------------------------------ *
+ * Browser fingerprinting
+ * ------------------------------------------------------------------ */
+
+/** A synthesized fingerprint profile rotated per-session for Ghost/Private/WImH modes. */
+export interface BrowserFingerprintProfile {
+  mode: 'standard' | 'ghost' | 'private' | 'wimh'
+  seed: string
+  hardwareConcurrency: number
+  deviceMemory: number
+  screenWidth: number
+  screenHeight: number
+  colorDepth: number
+  languages: string[]
+  gpuVendor: string
+  gpuRenderer: string
+  canvasNoise: number
+  audioNoise: number
+}
+
+/* ------------------------------------------------------------------ *
+ * Google OAuth integration
+ * ------------------------------------------------------------------ */
+
+export interface GoogleOAuthStartResult {
+  ok: boolean
+  error: string | null
+}
+
+export interface GoogleOAuthStatus {
+  configured: boolean
+  signedIn: boolean
+  email: string | null
+  name: string | null
+  expiresAt: number | null
+  scopes: string[]
+  redirectUri: string
+  storage: 'encrypted' | 'memory' | 'none'
+  error: string | null
+}
+
+/* ------------------------------------------------------------------ *
+ * Embedded DevTools CDP bridge
+ * ------------------------------------------------------------------ */
+
+export interface GuestDebuggerEvent {
+  guestId: number
+  method: string
+  params: Record<string, unknown>
+}
+
+export interface GuestDebuggerRequest {
+  webContentsId?: number
+  method?: string
+  params?: Record<string, unknown>
+}
+
+export interface GuestDebuggerResult {
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+}
+
+/* ------------------------------------------------------------------ *
+ * Favicon pipeline
+ * ------------------------------------------------------------------ */
+
+export interface FaviconUpdatedEvent {
+  pageUrl: string
+  host: string
+  dataUrl: string | null
+  source: string | null
+}
+
+/* ------------------------------------------------------------------ *
+ * Profile patching
+ * ------------------------------------------------------------------ */
+
+export interface BrowserProfilePatch {
+  name?: string
+  active?: boolean
+  avatar?: ProfileAvatar
+}

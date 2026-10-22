@@ -15,7 +15,7 @@ export function normalizeAddress(raw: string): string | null {
 
   // Anything with a space is a search, not a host.
   if (/\s/.test(value)) {
-    return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`
+    return `https://duckduckgo.com/?q=${encodeUrlComponent(value)}`
   }
 
   // A local path becomes a file URL so single-file prototypes can be previewed too.
@@ -42,3 +42,5 @@ export function hostOf(url: string | null): string {
     return url
   }
 }
+import { encodeUrlComponent } from '@shared/url-encode'
+

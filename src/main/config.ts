@@ -41,6 +41,27 @@ export function loadConfig(): ResolvedConfig {
     },
     configPath,
     ai: resolveAi(fileConfig.ai),
+    oauth: {
+      google: {
+        clientId: nonEmpty(
+          process.env.DEVLENS_GOOGLE_CLIENT_ID,
+          fileConfig.oauth?.google?.clientId
+        ) ?? DEFAULT_CONFIG.oauth.google.clientId,
+        redirectUri:
+          nonEmpty(
+            process.env.DEVLENS_GOOGLE_REDIRECT_URI,
+            fileConfig.oauth?.google?.redirectUri
+          ) ?? DEFAULT_CONFIG.oauth.google.redirectUri,
+        scopes:
+          Array.isArray(fileConfig.oauth?.google?.scopes) &&
+          fileConfig.oauth.google.scopes.length > 0
+            ? fileConfig.oauth.google.scopes
+                .filter((scope): scope is string => typeof scope === 'string')
+                .map((scope) => scope.trim())
+                .filter(Boolean)
+            : [...DEFAULT_CONFIG.oauth.google.scopes]
+      }
+    },
     interceptor: {
       enabled:
         readBoolean(process.env.DEVLENS_INTERCEPT) ?? fileConfig.interceptor?.enabled ?? DEFAULT_CONFIG.interceptor.enabled,

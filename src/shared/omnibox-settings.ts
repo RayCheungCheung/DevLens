@@ -11,6 +11,7 @@
  */
 
 import type { SearchEngineId } from './omnibox'
+import { encodeUrlComponent } from './url-encode'
 
 export type OmniboxEntryKind = 'engine' | 'shortcut'
 export type DefaultEngineRef = string
@@ -24,6 +25,8 @@ export interface OmniboxEntry {
   /** A `%s` query template for engines; a fixed URL for shortcuts. */
   template: string
   kind: OmniboxEntryKind
+  /** Optional in-site search URL for a shortcut. `%s` is the query; without it, search is unavailable. */
+  searchTemplate?: string
   /** Built-in brand metadata. Editing the row keeps its logo without locking the row. */
   builtInEngine?: SearchEngineId
   postData?: string
@@ -106,6 +109,7 @@ export const DEFAULT_SITE_SHORTCUTS: OmniboxEntry[] = [
     label: 'YouTube',
     keyword: 'yt',
     template: 'https://www.youtube.com/',
+    searchTemplate: 'https://www.youtube.com/results?search_query=%s',
     kind: 'shortcut'
   },
   {
@@ -113,6 +117,7 @@ export const DEFAULT_SITE_SHORTCUTS: OmniboxEntry[] = [
     label: 'GitHub',
     keyword: 'gh',
     template: 'https://github.com/',
+    searchTemplate: 'https://github.com/search?q=%s',
     kind: 'shortcut'
   },
   {
@@ -127,6 +132,7 @@ export const DEFAULT_SITE_SHORTCUTS: OmniboxEntry[] = [
     label: 'Reddit',
     keyword: 'r',
     template: 'https://www.reddit.com/',
+    searchTemplate: 'https://www.reddit.com/search/?q=%s',
     kind: 'shortcut'
   },
   {
@@ -134,6 +140,7 @@ export const DEFAULT_SITE_SHORTCUTS: OmniboxEntry[] = [
     label: 'Amazon',
     keyword: 'amz',
     template: 'https://www.amazon.com/',
+    searchTemplate: 'https://www.amazon.com/s?k=%s',
     kind: 'shortcut'
   },
   {
@@ -141,6 +148,7 @@ export const DEFAULT_SITE_SHORTCUTS: OmniboxEntry[] = [
     label: 'CVE database',
     keyword: 'cve',
     template: 'https://www.cve.org/',
+    searchTemplate: 'https://www.cve.org/CVERecord/SearchResults?query=%s',
     kind: 'shortcut'
   }
 ]
@@ -197,9 +205,46 @@ export function normalizeKeyword(value: string): string {
   return value.trim().replace(/^[@#]+/, '').replace(/\s+/g, '').toLowerCase()
 }
 
-export function entryUrl(entry: Pick<OmniboxEntry, 'template' | 'kind'>, query = ''): string {
-  if (entry.kind !== 'engine') return entry.template
-  return entry.template.replaceAll('%s', encodeURIComponent(query))
+export function entryUrl(
+  entry: Pick<OmniboxEntry, 'template' | 'kind' | 'searchTemplate'>,
+  query = ''
+): string {
+  if (entry.kind === 'engine') return entry.template.replaceAll('%s', encodeUrlComponent(query))
+  const trimmed = query.trim()
+  if (!trimmed) return entry.template
+  const searchTemplate = entry.searchTemplate ?? inferShortcutSearchTemplate(entry.template)
+  return searchTemplate
+    ? searchTemplate.replaceAll('%s', encodeUrlComponent(trimmed))
+    : entry.template
+}
+
+/** Search endpoints for the shortcuts DevLens ships and recognizes by host. */
+export function inferShortcutSearchTemplate(template: string): string | null {
+  try {
+    const url = new URL(template)
+    const host = url.hostname.replace(/^www\./, '').toLowerCase()
+    if (host === 'google.com') return 'https://www.google.com/search?q=%s'
+    if (host === 'gemini.google.com') return 'https://gemini.google.com/app?q=%s'
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      return 'https://www.youtube.com/results?search_query=%s'
+    }
+    if (host === 'github.com') return 'https://github.com/search?q=%s'
+    if (host === 'notion.so' || host === 'www.notion.so') {
+      return 'https://www.notion.so/search?query=%s'
+    }
+    if (host === 'reddit.com' || host.endsWith('.reddit.com')) {
+      return 'https://www.reddit.com/search/?q=%s'
+    }
+    if (host === 'amazon.com' || host.endsWith('.amazon.com')) {
+      return 'https://www.amazon.com/s?k=%s'
+    }
+    if (host === 'cve.org' || host.endsWith('.cve.org')) {
+      return 'https://www.cve.org/CVERecord/SearchResults?query=%s'
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 export function normalizeTemplate(value: string): string {
@@ -296,6 +341,12 @@ export function sanitizeOmniboxEntries(
       kind === 'engine' && typeof candidate.builtInEngine === 'string'
         ? candidate.builtInEngine
         : undefined
+    const searchTemplate =
+      kind === 'shortcut' &&
+      typeof candidate.searchTemplate === 'string' &&
+      candidate.searchTemplate.includes('%s')
+        ? normalizeTemplate(candidate.searchTemplate)
+        : ''
 
     entries.push({
       id,
@@ -304,6 +355,7 @@ export function sanitizeOmniboxEntries(
       template,
       kind,
       ...(builtInEngine ? { builtInEngine: builtInEngine as SearchEngineId } : {}),
+      ...(searchTemplate ? { searchTemplate } : {}),
       ...(postData ? { postData } : {}),
       ...(suggestionsUrl ? { suggestionsUrl: normalizeTemplate(suggestionsUrl) } : {})
     })

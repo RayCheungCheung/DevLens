@@ -14,48 +14,27 @@ import {
   type WebContents
 } from 'electron'
 import { IPC } from '../shared/ipc'
-import type {
-  AiAskRequest,
-  AiStreamEvent,
-  AiSignInWindowRequest,
-  BookmarkDropPosition,
-  BookmarkEntry,
-  BookmarkSnapshot,
-  BootstrapPayload,
-  BrowserProfile,
-  CookieRecord,
-  GhostSessionState,
-  GuestRegistration,
-  HistoryEntry,
-  InspectionState,
-  InterceptorRule,
-  LocalServerScan,
-  ModeState,
-  OpenInIdeRequest,
-  OpenInIdeResult,
-  PageCommandKind,
-  ProfileAvatar,
-  ProfileSettings,
-  ProtectionState,
-  RepeaterRequest,
-  RepeaterResponse,
-  ResumeRequestPayload,
-  SaveTextRequest,
-  SaveTextResult,
-  RemoteFileRequest,
-  GuestInspectRequest,
-  GuestInspectResult,
-  PageCaptureRequest,
-  SessionProfileId,
-  WimhState,
-  WorkspaceEntry,
-  AboutInfo
-} from '../shared/types'
+
 import { isProtectionLevel, type ProtectionLevel } from '../shared/protection'
 import { abort as abortAi, ask as askAi, describeProvider } from './ai'
 import { openAiSignInWindow } from './ai-window'
 import { loadConfig } from './config'
-import { instrumentGuest, registerGuest, setEmitter } from './guests'
+import { instrumentGuest, knownGuests, registerGuest, setEmitter } from './guests'
+import {
+  configureGuestDebugger,
+  detachGuestDebugger,
+  sendGuestDebuggerCommand
+} from './guest-debugger'
+import { fingerprintForContents } from './fingerprint'
+import {
+  configureGoogleOAuth,
+  googleOAuthStatus,
+  googleOAuthUrlFromArguments,
+  handleGoogleOAuthUrl,
+  registerGoogleOAuthProtocol,
+  signOutGoogle,
+  startGoogleOAuth
+} from './google-oauth'
 import { flushHistory, historyAdd, historyClear, historyList, historyPrune } from './history'
 import {
   bookmarkSnapshot,
@@ -83,6 +62,7 @@ import {
 import { openInIde } from './ide'
 import { listIdeOptions, schemeForIde } from './ide-detect'
 import { scanLocalServers } from './local-servers'
+import { workspacePartition } from './workspaces'
 import {
   configureMode,
   inspectionStateNow,
@@ -98,6 +78,7 @@ import {
   setShieldRules,
   setSiteAllowed
 } from './protection'
+import { querySitePermissions } from './sessions'
 import {
   activeProfileId,
   activeProfilePartition,
@@ -108,6 +89,7 @@ import {
   flushProfileRegistry,
   listProfiles,
   markInstrumented,
+  updateProfile,
   setAskOnStartup,
   switchProfile
 } from './profiles'
@@ -135,8 +117,10 @@ import {
 import {
   flushPreferences,
   preferencesNow,
+  preferencesForProfile,
   setLaunchpadSession,
-  setPreferences
+  setPreferences,
+  setPreferencesForProfile
 } from './preferences'
 import type { ProfilePreferences, ProfilePreferencesPatch } from '../shared/preferences'
 import type { OmniboxSettings } from '../shared/omnibox-settings'
@@ -146,7 +130,51 @@ import type {
   LaunchpadWeather
 } from '../shared/launchpad'
 import type { ShieldRules } from '../shared/privacy'
+import { encodeUrlComponent } from '../shared/url-encode'
 import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
+import type {
+  AboutInfo,
+  AiAskRequest,
+  AiSignInWindowRequest,
+  AiStreamEvent,
+  BootstrapPayload,
+  BookmarkEntry,
+  BookmarkSnapshot,
+  BookmarkDropPosition,
+  BrowserProfile,
+  BrowserProfilePatch,
+  CookieRecord,
+  GhostSessionState,
+  GuestDebuggerRequest,
+  GuestRegistration,
+  GuestInspectRequest,
+  GuestInspectResult,
+  HistoryEntry,
+  InspectionState,
+  InterceptorRule,
+  LocalServerScan,
+  ModeState,
+  OpenInIdeRequest,
+  OpenInIdeResult,
+  PageCaptureRequest,
+  PageCommandKind,
+  PermissionEntry,
+  ProtectionState,
+  GoogleOAuthStartResult,
+  GoogleOAuthStatus,
+  ProfileSettings,
+  ProfileAvatar,
+  ResumeRequestPayload,
+  RepeaterRequest,
+  RepeaterResponse,
+  RemoteFileRequest,
+  SaveTextRequest,
+  SaveTextResult,
+  SessionProfileId,
+  ThreatState,
+  WimhState,
+  WorkspaceEntry
+} from '../shared/types'
 import { normalizeAppIconStyle } from '../shared/app-icon-art'
 import { appIconFor } from './app-icons'
 import { profileDiskUsage } from './storage'
@@ -174,10 +202,12 @@ import {
   GHOST_PARTITION,
   clearProfileData,
   clearSiteData,
+  clearViewportCache,
   configureSessions,
   enterGhost,
   exitGhost,
   ghostStateNow,
+  guardStandardPermissions,
   hardenSession,
   listCookies,
   removeCookie,
@@ -199,6 +229,16 @@ import {
   wimhStateNow
 } from './wimh'
 import {
+  configureThreatDetection,
+  threatStateNow,
+  dismissAlert,
+  feedMouseSample,
+  noteUntrustedEvent,
+  noteScreenCaptureAttempt,
+  enableThreatDetection,
+  disableThreatDetection
+} from './threat-detection'
+import {
   activeWorkspace,
   addWorkspace,
   listWorkspaces,
@@ -210,9 +250,52 @@ import { applyModeMenu, createShellWindow, isGuestContents } from './window'
 import { cleanUserAgent } from './user-agent'
 import { attachDownloadSession } from './downloads'
 
+// Chromium marks automation-controlled sessions with `navigator.webdriver` and a Blink
+// feature flag. DevLens is a user agent, not an automated test harness; remove that marker
+// before Electron creates any renderer.
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
+
 const config = loadConfig()
 
 let shellWindow: BrowserWindow | null = null
+let googleOAuthReady = false
+let pendingGoogleOAuthUrl = googleOAuthUrlFromArguments(process.argv)
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  registerGoogleOAuthProtocol()
+  app.on('second-instance', (_event, argv) => {
+    const callback = googleOAuthUrlFromArguments(argv)
+    if (callback) {
+      pendingGoogleOAuthUrl = callback
+      if (googleOAuthReady) {
+        void handleGoogleOAuthUrl(callback)
+        pendingGoogleOAuthUrl = null
+      }
+    }
+    if (!shellWindow || shellWindow.isDestroyed()) return
+    if (shellWindow.isMinimized()) shellWindow.restore()
+    shellWindow.show()
+    shellWindow.focus()
+  })
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  if (!url.toLowerCase().startsWith('devlens://auth-callback')) return
+  if (googleOAuthReady) {
+    void handleGoogleOAuthUrl(url)
+  } else {
+    pendingGoogleOAuthUrl = url
+  }
+  if (shellWindow && !shellWindow.isDestroyed()) {
+    if (shellWindow.isMinimized()) shellWindow.restore()
+    shellWindow.show()
+    shellWindow.focus()
+  }
+})
 
 /** Applies one selected appearance icon to every live window and the macOS dock. */
 function applyShellAppIcon(style?: AppIconStyle): AppIconStyle {
@@ -225,6 +308,8 @@ function applyShellAppIcon(style?: AppIconStyle): AppIconStyle {
   return next
 }
 let startupGateCompleted = false
+let ipcHandlersRegistered = false
+let guestInstrumentationWired = false
 let exitCleanupDone = false
 let exitCleanupRunning = false
 let exitHookRegistered = false
@@ -237,6 +322,42 @@ function sendToShell(channel: string, payload: unknown): void {
 }
 
 function registerIpcHandlers(): void {
+  if (ipcHandlersRegistered) return
+  ipcHandlersRegistered = true
+  /**
+   * Every invoke channel belongs to the shell renderer. A webview guest has only its
+   * narrow sendToHost bridge, but a compromised shell page or a future second renderer
+   * must not inherit the full IPC surface merely because Electron can address it.
+   */
+  const rawHandle = ipcMain.handle.bind(ipcMain)
+  ipcMain.handle = ((channel: string, listener: (...args: unknown[]) => unknown) =>
+    rawHandle(channel, (event, ...args) => {
+      const sender = event.sender
+      const senderFrame = event.senderFrame
+      const trusted =
+        Boolean(shellWindow && !shellWindow.isDestroyed()) &&
+        sender === shellWindow?.webContents &&
+        Boolean(
+          senderFrame &&
+          sender.mainFrame &&
+          senderFrame.frameTreeNodeId === sender.mainFrame.frameTreeNodeId
+        )
+      if (!trusted) {
+        throw new Error('This IPC operation is only available to the DevLens shell.')
+      }
+      return listener(event, ...args)
+    })) as typeof ipcMain.handle
+
+  /** Content-addressed operations may only target registered webview guests. */
+  const registeredGuest = (id?: number): WebContents | null => {
+    if (!id) return null
+    const target = webContents.fromId(id)
+    if (!target || target.isDestroyed() || !knownGuests().has(id)) return null
+    return target
+  }
+  const isShellEvent = (event: Electron.IpcMainEvent): boolean =>
+    Boolean(shellWindow && !shellWindow.isDestroyed()) &&
+    event.sender === shellWindow?.webContents
   // renderer -> main: everything the UI needs before it can render a <webview>.
   ipcMain.handle(IPC.getBootstrap, (): BootstrapPayload => {
     return {
@@ -257,6 +378,7 @@ function registerIpcHandlers(): void {
       reportOutputDir: config.reportOutputDir,
       ghostPartition: GHOST_PARTITION,
       wimhPartition: WIMH_PARTITION,
+      workspacePartition: workspacePartition(activeWorkspace(config.workspaceRoot)),
       mode: config.mode,
       protection: config.protection,
       profilePartition: activeProfilePartition(),
@@ -280,13 +402,43 @@ function registerIpcHandlers(): void {
 
   // renderer -> main: guest id <-> viewport id. Main needs this to tag console
   // messages and network traffic with the viewport they came from.
-  ipcMain.on(IPC.registerGuest, (_event, registration: GuestRegistration) => {
-    registerGuest(registration)
+  ipcMain.on(IPC.registerGuest, (event, registration: GuestRegistration) => {
+    if (!isShellEvent(event)) return
+    const target = webContents.fromId(Number(registration?.guestId))
+    if (!target || target.isDestroyed() || target.getType() !== 'webview') return
+    if (registration.viewId !== 'mobile' && registration.viewId !== 'desktop') return
+    registerGuest({
+      guestId: target.id,
+      viewId: registration.viewId,
+      ...(typeof registration.partition === 'string' &&
+      registration.partition.length > 0 &&
+      registration.partition.length <= 160
+        ? { partition: registration.partition }
+        : {})
+    })
   })
 
   // Ctrl+W on the last tab: the renderer asks, main closes, and only that window is affected.
   ipcMain.on(IPC.windowClose, (event) => {
+    if (!isShellEvent(event)) return
     BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+
+  // The shell API is invisible to website guests. This explicit channel keeps the two
+  // DevTools targets separate even when the native menu is hidden behind the frameless window.
+  ipcMain.handle(IPC.shellDevToolsOpen, (event): boolean => {
+    const target = BrowserWindow.fromWebContents(event.sender)
+    if (!target || target.isDestroyed()) return false
+
+    if (target.webContents.isDevToolsOpened()) {
+      const tools = target.webContents.devToolsWebContents
+      if (tools && !tools.isDestroyed()) tools.focus()
+      else target.focus()
+      return true
+    }
+
+    target.webContents.openDevTools({ mode: 'detach', activate: true })
+    return true
   })
 
   // renderer -> main: "Open in VS Code" / click-to-source from the log panel.
@@ -320,6 +472,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.aiOpenSignInWindow, (_event, request: AiSignInWindowRequest) =>
     openAiSignInWindow(request)
   )
+  ipcMain.handle(IPC.googleAuthStatus, (): GoogleOAuthStatus => googleOAuthStatus())
+  ipcMain.handle(IPC.googleAuthStart, (): Promise<GoogleOAuthStartResult> => startGoogleOAuth())
+  ipcMain.handle(IPC.googleAuthLogout, (): GoogleOAuthStatus => signOutGoogle())
 
   // The completion itself runs to completion in the background; the renderer follows it
   // through the aiStream channel, which is what makes the transcript stream live.
@@ -349,7 +504,8 @@ function registerIpcHandlers(): void {
     return askAi(safe, config.ai, (event: AiStreamEvent) => sendToShell(IPC.aiStream, event))
   })
 
-  ipcMain.on(IPC.aiAbort, (_event, streamId: string) => {
+  ipcMain.on(IPC.aiAbort, (event, streamId: string) => {
+    if (!isShellEvent(event)) return
     abortAi(String(streamId))
   })
 
@@ -367,11 +523,13 @@ function registerIpcHandlers(): void {
 
   // Held requests are released by id; the header list is optional and replaces whatever
   // the page originally sent.
-  ipcMain.on(IPC.interceptorResume, (_event, payload: ResumeRequestPayload) => {
+  ipcMain.on(IPC.interceptorResume, (event, payload: ResumeRequestPayload) => {
+    if (!isShellEvent(event)) return
     if (payload?.id) resumeHeld({ id: String(payload.id), headers: payload.headers })
   })
 
-  ipcMain.on(IPC.interceptorDrop, (_event, id: string) => {
+  ipcMain.on(IPC.interceptorDrop, (event, id: string) => {
+    if (!isShellEvent(event)) return
     if (id) dropHeld(String(id))
   })
 
@@ -420,11 +578,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.remoteImageRead, (_event, url: string) => readRemoteImage(String(url ?? '')))
   ipcMain.handle(IPC.remoteImageCopy, (_event, url: string) => copyRemoteImage(String(url ?? '')))
   ipcMain.handle(IPC.pageCapture, (_event, request: PageCaptureRequest) =>
-    savePageCapture(request, config)
+    registeredGuest(request?.webContentsId)
+      ? savePageCapture(request, config)
+      : Promise.resolve({
+          ok: false,
+          path: null,
+          error: 'That page is no longer open.',
+          cancelled: false
+        })
   )
   ipcMain.handle(IPC.pageViewSource, async (_event, id: number) => {
-    const target = id ? webContents.fromId(id) : null
-    if (!target || target.isDestroyed()) {
+    const target = registeredGuest(id)
+    if (!target) {
       return { ok: false, error: 'That page is no longer open.' }
     }
     try {
@@ -473,8 +638,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.pageCommand,
     (_event, input?: { webContentsId?: number; command?: PageCommandKind }): boolean => {
-      const target = input?.webContentsId ? webContents.fromId(input.webContentsId) : null
-      if (!target || target.isDestroyed()) return false
+      const target = registeredGuest(input?.webContentsId)
+      if (!target) return false
       switch (input?.command) {
         case 'copy':
           target.copy()
@@ -518,8 +683,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.guestInspect,
     async (_event, input: GuestInspectRequest): Promise<GuestInspectResult> => {
-      const target = input?.webContentsId ? webContents.fromId(input.webContentsId) : null
-      if (!target || target.isDestroyed()) {
+      const target = registeredGuest(input?.webContentsId)
+      if (!target) {
         return { ok: false, summary: null, detail: null, error: 'That page is no longer open.' }
       }
       const x = Math.max(0, Math.round(Number(input.x) || 0))
@@ -568,6 +733,15 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.guestDebuggerSend,
+    (_event, request: GuestDebuggerRequest) => sendGuestDebuggerCommand(request)
+  )
+
+  ipcMain.handle(IPC.guestDebuggerDetach, (_event, webContentsId: number): boolean =>
+    detachGuestDebugger(webContentsId)
+  )
+
   /** Electron zoom levels are logarithmic: percent = 1.2 ^ level. */
   const zoomPercentOf = (target: WebContents): number =>
     Math.round(Math.pow(1.2, target.getZoomLevel()) * 100)
@@ -583,16 +757,16 @@ function registerIpcHandlers(): void {
 
   /** Read a guest's zoom, in percent, for the menu's zoom row. 0 means 100%. */
   ipcMain.handle(IPC.pageZoom, (_event, webContentsId?: number): number => {
-    const target = webContentsId ? webContents.fromId(webContentsId) : null
-    if (!target || target.isDestroyed()) return 0
+    const target = registeredGuest(webContentsId)
+    if (!target) return 0
     return zoomPercentOf(target)
   })
 
   ipcMain.handle(
     IPC.pageZoomBy,
     (_event, webContentsId?: number, delta?: number): number => {
-      const target = webContentsId ? webContents.fromId(webContentsId) : null
-      if (!target || target.isDestroyed()) return 0
+      const target = registeredGuest(webContentsId)
+      if (!target) return 0
       const step = Number.isFinite(delta) ? Number(delta) : 0
       target.setZoomLevel(clampZoomLevel(target.getZoomLevel() + step))
       return zoomPercentOf(target)
@@ -602,8 +776,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.pageZoomSet,
     (_event, webContentsId?: number, percent?: number): number => {
-      const target = webContentsId ? webContents.fromId(webContentsId) : null
-      if (!target || target.isDestroyed()) return 0
+      const target = registeredGuest(webContentsId)
+      if (!target) return 0
       return setZoomPercent(target, Number(percent))
     }
   )
@@ -617,7 +791,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.on(
     IPC.historyAdd,
-    (_event, entry: { url?: string; title?: string; private?: boolean; tabId?: string }) => {
+    (event, entry: { url?: string; title?: string; private?: boolean; tabId?: string }) => {
+    if (!isShellEvent(event)) return
     if (!entry?.url) return
     /**
      * A private tab's visits are never written down - not to disk and not to the in-memory
@@ -1041,6 +1216,10 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(IPC.sessionClearCache, (_event, partition?: string) =>
+    clearViewportCache(partition)
+  )
+
   ipcMain.handle(IPC.sandboxOpen, (_event, url: string) =>
     openSandboxWindow(String(url ?? ''), shellWindow)
   )
@@ -1101,9 +1280,21 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.wimhState, (): WimhState => wimhStateNow())
 
-  ipcMain.handle(IPC.wimhSetEnabled, (_event, enabled: boolean): Promise<WimhState> =>
-    setWimhEnabled(Boolean(enabled))
-  )
+  ipcMain.handle(IPC.wimhSetEnabled, (_event, enabled: boolean): Promise<WimhState> => {
+    const result = setWimhEnabled(Boolean(enabled))
+    if (enabled) {
+      enableThreatDetection()
+      if (shellWindow && !shellWindow.isDestroyed()) {
+        shellWindow.webContents.send('devlens:threat:monitoring', true)
+      }
+    } else {
+      disableThreatDetection()
+      if (shellWindow && !shellWindow.isDestroyed()) {
+        shellWindow.webContents.send('devlens:threat:monitoring', false)
+      }
+    }
+    return result
+  })
 
   ipcMain.handle(IPC.wimhSetClipboardTtl, (_event, ms: number): WimhState =>
     setClipboardTtl(Number(ms) || config.wimh.clipboardClearAfterMs)
@@ -1124,6 +1315,30 @@ function registerIpcHandlers(): void {
     return wimhStateNow()
   })
 
+  /* ---------------- threat detection (extreme protection) ---------------- */
+
+  ipcMain.handle(IPC.threatState, (): ThreatState => threatStateNow())
+
+  ipcMain.on(IPC.threatDismiss, (event) => {
+    if (!isShellEvent(event)) return
+    dismissAlert()
+    sendToShell(IPC.threatChanged, threatStateNow())
+  })
+
+  ipcMain.on(IPC.threatMouseSample, (_event, sample: { x: number; y: number; timestamp: number }) => {
+    if (typeof sample?.x === 'number' && typeof sample?.y === 'number' && typeof sample?.timestamp === 'number') {
+      feedMouseSample(sample.x, sample.y, sample.timestamp)
+    }
+  })
+
+  ipcMain.on(IPC.threatUntrustedInput, (_event, kind: string) => {
+    noteUntrustedEvent(String(kind ?? 'input'))
+  })
+
+  ipcMain.on(IPC.threatScreenCapture, (_event, source: string) => {
+    noteScreenCaptureAttempt(String(source ?? 'a guest page'))
+  })
+
   /* ---------------- on-demand inspection lease ---------------- */
 
   ipcMain.handle(IPC.inspectionState, (): InspectionState => inspectionStateNow())
@@ -1137,6 +1352,11 @@ function registerIpcHandlers(): void {
   /* ---------------- protection levels ---------------- */
 
   ipcMain.handle(IPC.protectionGetState, (): ProtectionState => protectionStateNow())
+  // Browser permissions query for SiteProtectionPanel
+  ipcMain.handle(IPC.permissionsQuery, (_event, url: string): PermissionEntry[] =>
+    querySitePermissions(String(url ?? ''))
+  )
+
 
   // Switching a level applies to the live sessions: the request filter reads the policy on
   // every request, so nothing has to be reloaded and no restart is involved.
@@ -1176,9 +1396,14 @@ function registerIpcHandlers(): void {
     removeWorkspace(String(path ?? ''), config.workspaceRoot)
   )
 
-  ipcMain.handle(IPC.workspacesSetActive, (_event, path: string): WorkspaceEntry[] =>
-    setActiveWorkspace(String(path ?? ''), config.workspaceRoot)
-  )
+  ipcMain.handle(IPC.workspacesSetActive, (_event, path: string): WorkspaceEntry[] => {
+    const result = setActiveWorkspace(String(path ?? ''), config.workspaceRoot)
+    // Broadcast the new workspace partition so tabs can use it
+    const active = result.find((entry) => entry.active)
+    const partition = active?.partition ?? null
+    sendToShell(IPC.workspacePartitionChanged, partition)
+    return result
+  })
 
   /* ---------------- workspace mode and profiles ---------------- */
 
@@ -1203,6 +1428,12 @@ function registerIpcHandlers(): void {
       broadcastProfiles(createProfile(entry))
   )
 
+  ipcMain.handle(
+    IPC.profilesUpdate,
+    (_event, input: { id?: string; patch?: BrowserProfilePatch }): BrowserProfile[] =>
+      broadcastProfiles(updateProfile(String(input?.id ?? ''), input?.patch ?? {}))
+  )
+
   ipcMain.handle(IPC.profilesSettings, (): ProfileSettings => ({
     askOnStartup: askOnStartupNow()
   }))
@@ -1210,6 +1441,35 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.profilesSetAskOnStartup, (_event, ask: boolean): ProfileSettings => ({
     askOnStartup: setAskOnStartup(ask !== false)
   }))
+
+  ipcMain.on(IPC.guestFingerprint, (event) => {
+    event.returnValue =
+      event.sender.getType() === 'webview' ? fingerprintForContents(event.sender) : null
+  })
+
+  ipcMain.handle(IPC.profilePreferencesGet, (_event, id: string): ProfilePreferences => {
+    const profileId = String(id ?? '')
+    if (!listProfiles().some((profile) => profile.id === profileId)) {
+      throw new Error('Unknown profile')
+    }
+    return preferencesForProfile(profileId)
+  })
+
+  ipcMain.handle(
+    IPC.profilePreferencesSet,
+    (
+      _event,
+      input: { id?: string; patch?: ProfilePreferencesPatch }
+    ): ProfilePreferences => {
+      const profileId = String(input?.id ?? '')
+      if (!listProfiles().some((profile) => profile.id === profileId)) {
+        throw new Error('Unknown profile')
+      }
+      const next = setPreferencesForProfile(profileId, input?.patch ?? {})
+      if (profileId === activeProfileId()) broadcastPreferences(next)
+      return next
+    }
+  )
 
   ipcMain.handle(IPC.profilesSwitch, (_event, id: string): BrowserProfile[] => {
     // Queued writes belong to the profile that is still active: land them before the swap so a
@@ -1223,7 +1483,11 @@ function registerIpcHandlers(): void {
     // A profile that is being used for the first time needs the same capture hooks as the
     // others, otherwise its traffic would be invisible to the interceptor panel.
     const profile = next.find((entry) => entry.active)
-    if (profile) attachDownloadSession(session.fromPartition(profile.partition, { cache: true }))
+    if (profile) {
+      const profileSession = session.fromPartition(profile.partition, { cache: true })
+      guardStandardPermissions(profileSession)
+      attachDownloadSession(profileSession)
+    }
     if (profile && markInstrumented(profile.partition)) {
       instrumentInterceptor(session.fromPartition(profile.partition, { cache: true }), 'standard')
     }
@@ -1241,10 +1505,18 @@ function profilePromptEnabled(value: string): boolean {
 }
 
 function wireGuestInstrumentation(): void {
+  if (guestInstrumentationWired) return
+  guestInstrumentationWired = true
   // Every <webview> guest shows up here as soon as Electron creates it.
   app.on('web-contents-created', (_event, contents: WebContents) => {
     if (!isGuestContents(contents.getType())) return
     instrumentGuest(contents)
+    // Persistent guest partitions include ordinary profiles and the isolated AI
+    // providers. Both are web-content surfaces and need the same explicit permission
+    // policy instead of Electron's implied default.
+    if (contents.session.storagePath) {
+      guardStandardPermissions(contents.session)
+    }
   })
 }
 
@@ -1277,7 +1549,7 @@ async function lookupWeather(place: string): Promise<LaunchpadWeather> {
   const requested = place || 'Macau'
   try {
     const geoResponse = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(requested)}&count=1&language=en&format=json`,
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeUrlComponent(requested)}&count=1&language=en&format=json`,
       { signal: AbortSignal.timeout(8000) }
     )
     if (!geoResponse.ok) throw new Error(`location lookup returned ${geoResponse.status}`)
@@ -1355,6 +1627,17 @@ function boot(): void {
   const startupIcon = appIconFor(preferencesNow().appearance.appIcon)
   shellWindow = createShellWindow(startupIcon)
   setEmitter(sendToShell)
+  configureGuestDebugger(sendToShell)
+  configureGoogleOAuth({
+    config: config.oauth.google,
+    onChanged: (status) => sendToShell(IPC.googleAuthChanged, status)
+  })
+  googleOAuthReady = true
+  if (pendingGoogleOAuthUrl) {
+    const callback = pendingGoogleOAuthUrl
+    pendingGoogleOAuthUrl = null
+    void handleGoogleOAuthUrl(callback)
+  }
 
   /*
    * One session hook set covers both viewports: they share a partition.
@@ -1366,6 +1649,7 @@ function boot(): void {
    */
   const startPartition = activeProfilePartition()
   const guestSession = session.fromPartition(startPartition, { cache: true })
+  guardStandardPermissions(guestSession)
   attachDownloadSession(guestSession)
   configureInterceptor(config.interceptor, sendToShell)
   instrumentInterceptor(guestSession, 'standard')
@@ -1386,6 +1670,11 @@ function boot(): void {
     onChanged: (state) => sendToShell(IPC.wimhChanged, state)
   })
   const wimhSession = session.fromPartition(WIMH_PARTITION, { cache: false })
+
+  // Threat detection: notifies the renderer when a threat is found during WImH mode.
+  configureThreatDetection({
+    onAlert: (alert) => sendToShell(IPC.threatAlert, alert)
+  })
   enforceRamOnly(wimhSession)
   instrumentInterceptor(wimhSession, 'wimh')
 

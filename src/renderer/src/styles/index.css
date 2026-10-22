@@ -4,8 +4,8 @@
  * Project Nova design tokens.
  *
  * One palette, two moods: `--devlens-accent*` is the only thing that changes between Normal
- * Mode (quiet, no glow) and Dev Mode (lime, lit). Everything else - surfaces, hairlines,
- * text - is shared, so the security lock-down never depends on a colour.
+ * Mode (quiet, no glow) and Dev Mode (full accent, lit). Everything else - surfaces,
+ * hairlines, text - is shared, so the security lock-down never depends on a colour.
  */
 @theme {
   --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -37,7 +37,15 @@
 }
 
 :root {
-  /* Calm defaults; the accents below are overridden per mode. */
+  /*
+   * Workspace Finish owns the hue; Normal/Dev Mode owns how loudly it is used. Mode blocks
+   * derive from these base tokens so a themed accent survives mode switches without any
+   * mode hardcoding a colour the theme did not choose.
+   */
+  --theme-accent-base: var(--color-nova-teal);
+  --theme-accent-soft: rgba(45, 212, 191, 0.12);
+  --theme-accent-line: rgba(45, 212, 191, 0.32);
+  --theme-accent-glow: rgba(45, 212, 191, 0.16);
   --devlens-accent: var(--color-nova-teal);
   --devlens-accent-soft: rgba(45, 212, 191, 0.12);
   --devlens-accent-line: rgba(45, 212, 191, 0.32);
@@ -45,6 +53,8 @@
   --devlens-hairline: rgba(255, 255, 255, 0.07);
   --devlens-hairline-strong: rgba(255, 255, 255, 0.13);
   --devlens-glass: rgba(9, 11, 15, 0.72);
+  --devlens-chrome-base: #06070a;
+  --devlens-glass-tinted: color-mix(in srgb, var(--theme-accent-base) 10%, transparent);
   --devlens-tab: rgba(255, 255, 255, 0.028);
   --devlens-tab-active: #0f1218;
   --devlens-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
@@ -61,51 +71,54 @@
   --devlens-stealth-line: rgba(167, 139, 250, 0.42);
 }
 
-/* Dev Mode: the hacker accent and a soft bloom on the active surfaces. */
+/* Dev Mode: the workspace accent at full strength plus a soft bloom on active surfaces. */
 [data-mode='dev'] {
-  --devlens-accent: var(--color-nova-lime);
-  --devlens-accent-soft: rgba(163, 230, 53, 0.12);
-  --devlens-accent-line: rgba(163, 230, 53, 0.34);
-  --devlens-glow: rgba(163, 230, 53, 0.16);
+  --devlens-accent: var(--theme-accent-base);
+  --devlens-accent-soft: var(--theme-accent-soft);
+  --devlens-accent-line: var(--theme-accent-line);
+  --devlens-glow: var(--theme-accent-glow);
 }
 
-/* Normal Mode: quiet by design - same structure, no bloom. */
+/* Normal Mode: the same workspace hue, deliberately quieter and without a bloom. */
 [data-mode='normal'] {
-  --devlens-accent: #9aa6b8;
-  --devlens-accent-soft: rgba(154, 166, 184, 0.1);
-  --devlens-accent-line: rgba(154, 166, 184, 0.22);
+  --devlens-accent: color-mix(in srgb, var(--theme-accent-base) 72%, #9aa6b8);
+  --devlens-accent-soft: color-mix(in srgb, var(--theme-accent-soft) 65%, transparent);
+  --devlens-accent-line: color-mix(in srgb, var(--theme-accent-line) 75%, transparent);
   --devlens-glow: transparent;
 }
 
-/* Workspace themes recolor chrome without touching the website content preference. */
+/* Workspace themes own the accent hue and recolor chrome without touching website content. */
 [data-workspace-theme='midnight'] {
-  --devlens-accent: #8b9cff;
-  --devlens-accent-soft: rgba(139, 156, 255, 0.14);
-  --devlens-accent-line: rgba(139, 156, 255, 0.36);
-  --devlens-glow: rgba(139, 156, 255, 0.2);
+  --theme-accent-base: #8b9cff;
+  --theme-accent-soft: rgba(139, 156, 255, 0.14);
+  --theme-accent-line: rgba(139, 156, 255, 0.36);
+  --theme-accent-glow: rgba(139, 156, 255, 0.2);
   --devlens-glass: rgba(10, 12, 26, 0.84);
+  --devlens-glass-tinted: color-mix(in srgb, var(--theme-accent-base) 12%, transparent);
   --devlens-tab: rgba(139, 156, 255, 0.055);
   --devlens-tab-active: #11152a;
   --devlens-wallpaper-tint: rgba(99, 102, 241, 0.34);
 }
 
 [data-workspace-theme='ocean'] {
-  --devlens-accent: #38e8ff;
-  --devlens-accent-soft: rgba(56, 232, 255, 0.12);
-  --devlens-accent-line: rgba(56, 232, 255, 0.34);
-  --devlens-glow: rgba(56, 232, 255, 0.18);
+  --theme-accent-base: #38e8ff;
+  --theme-accent-soft: rgba(56, 232, 255, 0.12);
+  --theme-accent-line: rgba(56, 232, 255, 0.34);
+  --theme-accent-glow: rgba(56, 232, 255, 0.18);
   --devlens-glass: rgba(5, 17, 22, 0.84);
+  --devlens-glass-tinted: color-mix(in srgb, var(--theme-accent-base) 12%, transparent);
   --devlens-tab: rgba(56, 232, 255, 0.045);
   --devlens-tab-active: #0a1c23;
   --devlens-wallpaper-tint: rgba(14, 165, 233, 0.3);
 }
 
 [data-workspace-theme='ember'] {
-  --devlens-accent: #ffb44a;
-  --devlens-accent-soft: rgba(255, 180, 74, 0.12);
-  --devlens-accent-line: rgba(255, 180, 74, 0.34);
-  --devlens-glow: rgba(255, 180, 74, 0.17);
+  --theme-accent-base: #ffb44a;
+  --theme-accent-soft: rgba(255, 180, 74, 0.12);
+  --theme-accent-line: rgba(255, 180, 74, 0.34);
+  --theme-accent-glow: rgba(255, 180, 74, 0.17);
   --devlens-glass: rgba(20, 14, 10, 0.84);
+  --devlens-glass-tinted: color-mix(in srgb, var(--theme-accent-base) 12%, transparent);
   --devlens-tab: rgba(255, 180, 74, 0.05);
   --devlens-tab-active: #20160f;
   --devlens-wallpaper-tint: rgba(245, 158, 11, 0.3);
@@ -127,10 +140,6 @@
   --color-ink-100: #0f1b2d;
   --devlens-hairline: rgba(20, 38, 62, 0.12);
   --devlens-hairline-strong: rgba(20, 38, 62, 0.2);
-  --devlens-glass: rgba(248, 251, 255, 0.88);
-  --devlens-tab: rgba(20, 38, 62, 0.045);
-  --devlens-tab-active: #ffffff;
-  --devlens-shadow: 0 18px 40px -24px rgba(33, 55, 84, 0.28);
 }
 
 [data-content-theme='light'] .nova-card {
@@ -261,7 +270,6 @@
 
   body {
     margin: 0;
-    overflow: hidden;
     background-color: var(--color-ink-950);
     color: var(--color-ink-200);
     font-family: var(--font-sans);
@@ -328,6 +336,18 @@
     background-color: var(--devlens-glass);
     backdrop-filter: blur(20px) saturate(1.25);
     border-color: var(--devlens-hairline);
+  }
+  /* Theme-colored immersive extension: subtle tint overlay on chrome surfaces. */
+  .nova-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: var(--devlens-glass-tinted, transparent);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .nova-glass {
+    position: relative;
   }
 
   /* Floating tab: detached, rounded on top, hairline edged. */
@@ -500,5 +520,87 @@
   /* Thin divider that reads as a hairline rather than a line. */
   .nova-divide > * + * {
     border-top: 1px solid var(--devlens-hairline);
+  }
+
+  /* --- Split View suggestion pill animations --- */
+
+  @keyframes devlens-split-suggest-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) translateX(-50%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) translateX(-50%);
+    }
+  }
+
+  @keyframes devlens-split-suggest-in-right {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes devlens-split-suggest-out {
+    from {
+      opacity: 1;
+      transform: translateY(0) translateX(-50%);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-6px) translateX(-50%);
+    }
+  }
+
+  @keyframes devlens-split-suggest-out-right {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+
+    /* --- Applied animation classes for the Split View suggestion pill --- */
+
+  .devls-split-suggest {
+    animation: devlens-split-suggest-in 0.25s ease-out forwards;
+  }
+
+  .devls-split-suggest-right {
+    animation: devlens-split-suggest-in-right 0.25s ease-out forwards;
+  }
+
+  .devls-suggest-exit {
+    animation: devlens-split-suggest-out 0.2s ease-in forwards;
+  }
+
+  .devls-suggest-exit-right {
+    animation: devlens-split-suggest-out-right 0.2s ease-in forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .devls-split-suggest,
+    .devls-split-suggest-right,
+    .devls-suggest-exit,
+    .devls-suggest-exit-right {
+      animation: none !important;
+      opacity: 0;
+    }
+
+    .devls-split-suggest,
+    .devls-suggest-exit {
+      animation: none !important;
+    }
+    .devls-suggest-exit {
+      opacity: 0;
+    }
   }
 }

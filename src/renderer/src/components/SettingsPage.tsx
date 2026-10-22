@@ -10,6 +10,7 @@ import {
   GripVertical,
   House,
   Info,
+  Keyboard,
   LayoutPanelTop,
   Languages,
   Palette,
@@ -19,6 +20,7 @@ import {
   SlidersHorizontal,
   Trash2,
   UserRound,
+  UsersRound,
   Wrench
 } from 'lucide-react'
 import { AI_SITES, type AiSiteId } from '@shared/ai-sites'
@@ -33,7 +35,6 @@ import {
 } from '@shared/preferences'
 import type { IdeOption } from '@shared/ide'
 import type {
-  LaunchpadActivity,
   LaunchpadPreferences,
   LaunchpadSystemState,
   LaunchpadWidgets,
@@ -79,6 +80,7 @@ import {
 import { AI_BRAND_THEME as AI_PROVIDER_TILE, AiMark } from '@renderer/components/AiMark'
 import { OmniboxSettingsContent } from '@renderer/components/OmniboxSettings'
 import { AboutSettingsContent } from '@renderer/components/AboutSettings'
+import { AboutDevLensTeams } from '@renderer/components/AboutDevLensTeams'
 import { DownloadsSettingsContent } from '@renderer/components/DownloadsSettings'
 import { BrowsingDataSettingsContent } from '@renderer/components/BrowsingDataSettings'
 import { DefaultBrowserCard } from '@renderer/components/DefaultBrowserCard'
@@ -90,8 +92,11 @@ import { appIconDesign } from '@shared/app-icon-art'
 import type { AboutInfo, UpdateChannel, UpdateStrategy } from '@shared/types'
 import { ToggleSwitch as Switch } from '@renderer/components/ToggleSwitch'
 import { IdentitySettingsContent } from '@renderer/components/IdentitySettings'
+import { HotkeySettings } from '@renderer/components/HotkeySettings'
+import { GoogleAccountSettings } from '@renderer/components/GoogleAccountSettings'
 import { StartupTabsSelect } from '@renderer/components/StartupTabsSelect'
 import { SelectMenu } from '@renderer/components/SelectMenu'
+import type { HotkeyPreferences } from '@shared/hotkeys'
 
 interface SettingsPageProps {
   /** The category named by the tab's `devlens:settings/<category>` URL. */
@@ -139,6 +144,8 @@ interface SettingsPageProps {
   onOpenThemes: () => void
   tabsPreferences: TabsPreferences
   onTabs: (patch: Partial<TabsPreferences>) => void
+  hotkeys: HotkeyPreferences
+  onHotkeys: (preferences: HotkeyPreferences) => void
   languages: LanguagePreferences
   onLanguages: (patch: Partial<LanguagePreferences>) => void
   profileAsk: boolean
@@ -174,11 +181,13 @@ const CATEGORIES: {
   { id: 'privacy', label: 'Privacy and security', summary: 'Protection and data', icon: ShieldCheck },
   { id: 'appearance', label: 'Appearance', summary: 'Toolbar, bookmarks and zoom', icon: Palette },
   { id: 'tabs', label: 'Tabs and browsing', summary: 'Bookmark behavior', icon: PanelsTopLeft },
+  { id: 'hotkeys', label: 'Hotkeys', summary: 'Keyboard shortcut bindings', icon: Keyboard },
   { id: 'downloads', label: 'Downloads & File Handlers', summary: 'Save locations and content types', icon: Download },
   { id: 'languages', label: 'Languages & Localization', summary: 'Interface, web and translation', icon: Languages },
   { id: 'developer', label: 'Developer workspace', summary: 'AI and tooling', icon: Wrench },
   { id: 'identity', label: 'Identity', summary: 'Profile and startup prompt', icon: UserRound },
-  { id: 'about', label: 'About DevLens & System Updates', summary: 'Version, updates and license', icon: Info }
+  { id: 'about', label: 'About DevLens & System Updates', summary: 'Version, updates and license', icon: Info },
+  { id: 'team', label: 'About DevLens Teams', summary: 'RayCheung and Lensy', icon: UsersRound }
 ]
 
 const TOOL_ROWS: { key: keyof ToolbarTools; label: string; detail: string }[] = [
@@ -195,12 +204,6 @@ const WIDGET_ROWS: { key: keyof LaunchpadWidgets; label: string; detail: string 
   { key: 'systemHealth', label: 'System health', detail: 'CPU threads, device memory and session counters.' },
   { key: 'weather', label: 'Weather', detail: 'A local weather lookup for the place below.' },
   { key: 'focusTimer', label: 'Focus timer', detail: 'A 25-minute focus and 5-minute break timer.' }
-]
-
-const ACTIVITY_ROWS: { key: keyof LaunchpadActivity; label: string; detail: string }[] = [
-  { key: 'recent', label: 'Recent pages', detail: 'Show the latest pages from this profile.' },
-  { key: 'bookmarks', label: 'Bookmarks', detail: 'Show saved pages as a second activity shelf.' },
-  { key: 'downloads', label: 'Downloads', detail: 'Keep a downloads shelf visible on the Launchpad.' }
 ]
 
 const TARGET_LABELS: Record<LaunchTarget, string> = {
@@ -255,6 +258,8 @@ export function SettingsPage({
   onOpenThemes,
   tabsPreferences,
   onTabs,
+  hotkeys,
+  onHotkeys,
   languages,
   onLanguages,
   profileAsk,
@@ -361,16 +366,6 @@ export function SettingsPage({
       containers: [
         ...tabsPreferences.containers,
         { id, label: 'New Container', color: '#7dd3fc', enabled: true }
-      ]
-    })
-  }
-
-  const addHotkey = (): void => {
-    const id = `hotkey-${Date.now().toString(36)}`
-    onTabs({
-      hotkeys: [
-        ...tabsPreferences.hotkeys,
-        { id, label: 'Custom command', shortcut: '' }
       ]
     })
   }
@@ -692,25 +687,10 @@ export function SettingsPage({
               </SettingsCard>
 
               <SettingsCard
-                title="Activity & Visuals"
-                detail="Choose the shelves below the widget grid and give the Launchpad its own background."
+                title="Launchpad visual"
+                detail="Give the Launchpad its own background without adding extra content shelves."
               >
-                <div className="divide-y divide-white/[0.05]">
-                  {ACTIVITY_ROWS.map((row) => (
-                    <SettingRow key={row.key} label={row.label} detail={row.detail}>
-                      <Switch
-                        checked={launchpad.activity[row.key]}
-                        testId={`launchpad-activity-${row.key}`}
-                        onChange={(checked) =>
-                          onLaunchpad({
-                            activity: { ...launchpad.activity, [row.key]: checked }
-                          })
-                        }
-                      />
-                    </SettingRow>
-                  ))}
-                </div>
-                <div className="mt-4">
+                <div>
                   <div className="flex flex-wrap items-end justify-between gap-3">
                     <div>
                       <p className="text-[11px] text-ink-200">Launchpad wallpaper</p>
@@ -1682,63 +1662,6 @@ export function SettingsPage({
                     />
                   </SettingRow>
                 </div>
-                <p className="mt-4 mb-2 text-[10px] text-ink-400">Customise Hotkeys</p>
-                <div className="flex flex-col gap-1.5">
-                  {tabsPreferences.hotkeys.map((hotkey) => (
-                    <div key={hotkey.id} className="flex items-center gap-2">
-                      <input
-                        value={hotkey.label}
-                        aria-label="Hotkey action"
-                        onChange={(event) =>
-                          onTabs({
-                            hotkeys: tabsPreferences.hotkeys.map((entry) =>
-                              entry.id === hotkey.id
-                                ? { ...entry, label: event.target.value }
-                                : entry
-                            )
-                          })
-                        }
-                        className="h-7 min-w-0 flex-1 rounded border border-[var(--devlens-hairline)] bg-black/20 px-2 text-[10px] text-ink-200 outline-none"
-                      />
-                      <input
-                        value={hotkey.shortcut}
-                        aria-label={`Shortcut for ${hotkey.label}`}
-                        placeholder="Ctrl+…"
-                        onChange={(event) =>
-                          onTabs({
-                            hotkeys: tabsPreferences.hotkeys.map((entry) =>
-                              entry.id === hotkey.id
-                                ? { ...entry, shortcut: event.target.value }
-                                : entry
-                            )
-                          })
-                        }
-                        className="h-7 w-28 rounded border border-[var(--devlens-hairline)] bg-black/20 px-2 font-mono text-[10px] text-ink-200 outline-none"
-                      />
-                      <button
-                        type="button"
-                        aria-label={`Remove ${hotkey.label}`}
-                        onClick={() =>
-                          onTabs({
-                            hotkeys: tabsPreferences.hotkeys.filter(
-                              (entry) => entry.id !== hotkey.id
-                            )
-                          })
-                        }
-                        className="flex h-6 w-6 items-center justify-center rounded text-ink-500 hover:text-rose-300"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addHotkey}
-                    className="self-start rounded-md border border-[var(--devlens-hairline)] px-2.5 py-1.5 text-[10px] text-ink-300 hover:border-[var(--devlens-accent-line)]"
-                  >
-                    Add hotkey
-                  </button>
-                </div>
               </SettingsCard>
 
               <SettingsCard
@@ -1807,6 +1730,13 @@ export function SettingsPage({
                 </div>
               </SettingsCard>
             </div>
+          )}
+
+          {category === 'hotkeys' && (
+            <HotkeySettings
+              bindings={hotkeys.bindings}
+              onChange={(bindings) => onHotkeys({ ...hotkeys, bindings })}
+            />
           )}
 
           {category === 'developer' && (
@@ -1894,6 +1824,8 @@ export function SettingsPage({
                   })}
                 </div>
               </SettingsCard>
+
+              <GoogleAccountSettings />
 
               <SettingsCard
                 title="Workspace tooling"
@@ -2192,6 +2124,7 @@ export function SettingsPage({
               onOpenRoute={onOpenAboutRoute}
             />
           )}
+          {category === 'team' && <AboutDevLensTeams />}
           {category === 'downloads' && (
             <DownloadsSettingsContent preferences={downloads} onChange={onDownloads} />
           )}

@@ -11,8 +11,8 @@ interface ModeSwitcherProps {
  * Mode switcher.
  *
  * Normal is deliberately quiet - a thin lock and a muted label, because the point of that mode
- * is to disappear. Dev gets the hacker accent: a lime terminal badge, a glow on the rail and
- * the mode name in the status bar.
+ * is to disappear. Both modes share the selected workspace finish; the icon and label identify
+ * the mode without forcing a separate green/grey palette.
  */
 export function ModeSwitcher({ mode, busy, onChange }: ModeSwitcherProps) {
   return (
@@ -21,7 +21,7 @@ export function ModeSwitcher({ mode, busy, onChange }: ModeSwitcherProps) {
       aria-label="Workspace mode"
       className={[
         'flex shrink-0 items-center gap-0.5 rounded-md border p-0.5 transition-colors',
-        mode === 'dev' ? 'border-lime-400/40 bg-lime-400/[0.06]' : 'border-white/10 bg-white/[0.02]'
+        'border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)]'
       ].join(' ')}
     >
       {WORKSPACE_MODES.map((option) => {
@@ -41,9 +41,7 @@ export function ModeSwitcher({ mode, busy, onChange }: ModeSwitcherProps) {
             className={[
               'inline-flex h-6 items-center gap-1.5 rounded-[4px] px-2 text-[10px] transition-colors',
               active
-                ? option === 'dev'
-                  ? 'bg-lime-400/15 text-lime-100'
-                  : 'bg-white/10 text-neutral-100'
+                ? 'bg-[var(--devlens-accent)] text-ink-950'
                 : 'text-neutral-500 hover:text-neutral-300'
             ].join(' ')}
           >

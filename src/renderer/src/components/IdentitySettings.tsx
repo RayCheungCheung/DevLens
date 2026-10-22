@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { Check, Plus, Trash2 } from 'lucide-react'
+import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { BrowserProfile, ProfileAvatar } from '@shared/types'
 import {
   PROFILE_AVATARS,
   ProfileAvatarMark
 } from '@renderer/components/ProfileAvatarMark'
 import { ToggleSwitch } from '@renderer/components/ToggleSwitch'
+import { ProfileCustomizationModal } from '@renderer/components/ProfileCustomizationModal'
 
 interface IdentitySettingsProps {
   profiles: BrowserProfile[]
@@ -40,6 +41,7 @@ export function IdentitySettingsContent({
   const [draft, setDraft] = useState('')
   const [avatar, setAvatar] = useState<ProfileAvatar>('user')
   const [deleteTarget, setDeleteTarget] = useState<BrowserProfile | null>(null)
+  const [customizeTarget, setCustomizeTarget] = useState<BrowserProfile | null>(null)
 
   const submit = (): void => {
     const name = draft.trim()
@@ -117,6 +119,16 @@ export function IdentitySettingsContent({
                   ) : (
                     <span className="shrink-0 text-[10px] text-ink-400">Switch</span>
                   )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Customize ${profile.name}`}
+                  title={`Customize ${profile.name}`}
+                  disabled={busy}
+                  onClick={() => setCustomizeTarget(profile)}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-white/5 hover:text-[var(--devlens-accent)] disabled:opacity-40"
+                >
+                  <Pencil size={13} />
                 </button>
                 {profile.removable && !active && (
                   <button
@@ -266,6 +278,13 @@ export function IdentitySettingsContent({
       <p className="font-mono text-[10px] leading-5 text-ink-500">
         Profiles and their sessions stay on this computer. Nothing is synced or uploaded.
       </p>
+
+      {customizeTarget && (
+        <ProfileCustomizationModal
+          profile={customizeTarget}
+          onClose={() => setCustomizeTarget(null)}
+        />
+      )}
     </div>
   )
 }

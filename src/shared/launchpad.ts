@@ -29,6 +29,8 @@ export interface LaunchpadSessionTab {
   url: string
   title: string
   pinned?: boolean
+  /** Persistent tab-group association. */
+  groupId?: string
 }
 
 export interface LaunchpadSession {
@@ -47,6 +49,12 @@ export interface LaunchpadPreferences {
   startupUrl: string
   /** Refresh default-browser status whenever the DevLens window gains focus. */
   checkDefaultBrowser: boolean
+  /** Show the shortcut tile grid below the search field. */
+  shortcutsVisible: boolean
+  /** Visible shortcut rows; the grid caps itself to this many rows of eight. */
+  shortcutRows: number
+  /** Show the dashboard widget band. Individual widget choices remain in Settings. */
+  widgetsVisible: boolean
   widgets: LaunchpadWidgets
   activity: LaunchpadActivity
   /** Built-in wallpaper id, custom image, or the plain theme surface. */
@@ -82,6 +90,9 @@ export const DEFAULT_LAUNCHPAD_PREFERENCES: LaunchpadPreferences = {
   startupTabs: 'none',
   startupUrl: 'https://developer.mozilla.org/',
   checkDefaultBrowser: true,
+  shortcutsVisible: true,
+  shortcutRows: 1,
+  widgetsVisible: true,
   widgets: {
     clock: true,
     devSpotlight: true,

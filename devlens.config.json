@@ -19,6 +19,13 @@
     "temperature": 0.2,
     "maxTokens": 900
   },
+  "oauth": {
+    "google": {
+      "clientId": "",
+      "redirectUri": "devlens://auth-callback",
+      "scopes": ["openid", "email", "profile"]
+    }
+  },
   "interceptor": {
     "enabled": true,
     "pauseTimeoutMs": 20000,

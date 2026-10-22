@@ -26,6 +26,10 @@ import type { DeviceFoldState } from './config'
 import type { UpdateChannel, UpdateStrategy } from './types'
 import { DEFAULT_DOWNLOAD_PREFERENCES, type DownloadPreferences, type DownloadPreferencesPatch } from './downloads'
 import type { IdeId } from './ide'
+import {
+  DEFAULT_HOTKEY_PREFERENCES,
+  type HotkeyPreferences
+} from './hotkeys'
 
 /** Where the sidebar toggle sits in the toolbar. */
 export type SidebarTogglePosition = 'start' | 'end'
@@ -136,6 +140,8 @@ export interface ProfilePreferences {
   about: AboutPreferences
   downloads: DownloadPreferences
   developer: DeveloperPreferences
+  /** Editable global and developer keyboard bindings, one set per profile. */
+  hotkeys: HotkeyPreferences
 }
 
 /** About controls send only the changed field, so rapid edits cannot overwrite each other. */
@@ -202,5 +208,6 @@ export const DEFAULT_PREFERENCES: ProfilePreferences = {
   browser: DEFAULT_BROWSER_PREFERENCES,
   about: DEFAULT_ABOUT_PREFERENCES,
   downloads: DEFAULT_DOWNLOAD_PREFERENCES,
-  developer: DEFAULT_DEVELOPER_PREFERENCES
+  developer: DEFAULT_DEVELOPER_PREFERENCES,
+  hotkeys: DEFAULT_HOTKEY_PREFERENCES
 }

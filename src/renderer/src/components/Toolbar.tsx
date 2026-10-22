@@ -1,15 +1,18 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
   Code2,
+  Columns2,
+  Lightbulb,
   Link2,
   PanelRightClose,
   PanelRightOpen,
   RotateCw,
   ShieldHalf,
   Star,
-  Unlink2
+  Unlink2,
+  X
 } from 'lucide-react'
 import type { OmniboxAction, OmniboxSuggestion } from '@shared/omnibox'
 import type { DefaultEngineRef } from '@shared/omnibox-settings'
@@ -42,6 +45,11 @@ interface ToolbarProps {
     favicons: Record<string, string | null>
   }
   omniboxHint: string | null
+  splitSuggestion: { firstTitle: string; secondTitle: string } | null
+  onOpenSplitSuggestion: () => void
+  onDismissSplitSuggestion: () => void
+  splitActive: boolean
+  onExitSplit: () => void
   sessionChip: ReactNode
   /** The page on screen is saved locally, so the star renders filled. */
   bookmarked: boolean
@@ -152,6 +160,11 @@ export function Toolbar({
   defaultEngine,
   customs,
   omniboxHint,
+  splitSuggestion,
+  onOpenSplitSuggestion,
+  onDismissSplitSuggestion,
+  splitActive,
+  onExitSplit,
   sessionChip,
   bookmarked,
   canBookmark,
@@ -197,9 +210,53 @@ export function Toolbar({
   onNotice,
   menu
 }: ToolbarProps) {
+  const [addressFocused, setAddressFocused] = useState(false)
   // Normal mode renders navigation, the omnibox, the mode switcher and profiles - and nothing
   // that could reach the developer area.
   const dev = isDevModeValue(mode)
+
+
+  /* --- Split View suggestion pill: animation, exit transition, and bounding rect --- */
+  const [exiting, setExiting] = useState(false)
+  const [animateRight, setAnimateRight] = useState(false)
+  const pillRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (!splitSuggestion || splitActive || addressFocused) return
+    setExiting(false)
+    const timer = requestAnimationFrame(() => {
+      if (!pillRef.current) return
+      const rect = pillRef.current.getBoundingClientRect()
+      if (rect.left < 8 || rect.right > window.innerWidth - 8) {
+        setAnimateRight(true)
+      } else {
+        setAnimateRight(false)
+      }
+    })
+    return () => cancelAnimationFrame(timer)
+  }, [splitSuggestion, splitActive, addressFocused])
+
+  const handleDismiss = () => { setExiting(true) }
+
+  const handleAnimationEnd = (e: React.AnimationEvent) => {
+    const name = e.animationName
+    if (name === "devlens-split-suggest-out" || name === "devlens-split-suggest-out-right") {
+      onDismissSplitSuggestion()
+      setExiting(false)
+    }
+  }
+
+  const pillClass = (() => {
+    const base = "absolute top-[calc(100%_+_8px)] z-[65] flex w-max max-w-[min(520px,calc(100vw_-_300px))] items-center gap-2 rounded-full border border-[var(--devlens-accent-line)] bg-[color-mix(in_srgb,var(--color-ink-950)_96%,transparent)] py-1 pl-2 pr-1 text-[10px] text-ink-300 shadow-xl backdrop-blur-md"
+    const pos = animateRight ? "right-0" : "left-1/2 -translate-x-1/2"
+    if (exiting) {
+      const anim = animateRight ? "devls-suggest-exit-right" : "devls-suggest-exit"
+      return base + " " + pos + " " + anim
+    }
+    const anim = animateRight ? "devls-split-suggest-right" : "devls-split-suggest"
+    return base + " " + pos + " " + anim
+  })()
+
 
   /**
    * The dock's handle.
@@ -241,12 +298,11 @@ export function Toolbar({
        * with a lower z-index the dashboard painted over them: the menu opened and was covered,
        * which looked exactly like "it only works when a website is open".
        */
-      className="nova-glass relative z-50 flex h-12 shrink-0 items-center gap-1.5 border-b px-3"
-      style={
-        dev
-          ? { borderBottomColor: 'var(--devlens-accent-line)', boxShadow: '0 10px 30px -26px var(--devlens-glow)' }
-          : undefined
-      }
+      className="nova-glass relative z-50 flex h-14 shrink-0 items-center gap-1.5 border-b px-3 overflow-visible"
+      style={{
+        borderBottomColor: 'var(--devlens-accent-line)',
+        boxShadow: '0 10px 30px -26px var(--devlens-glow)'
+      }}
     >
       {/* The leftmost slot, before navigation: the dock is the outermost layer of the workspace,
           so its handle is the outermost control. */}
@@ -270,25 +326,75 @@ export function Toolbar({
         </IconButton>
       </div>
 
-      <Omnibox
-        value={address}
-        onChange={onAddressChange}
-        onRun={onRun}
-        onFocusChange={onAddressFocusChange}
-        suggestions={suggestions}
-        defaultEngine={defaultEngine}
-        customs={customs}
-        sessionChip={sessionChip}
-        hint={omniboxHint}
-        pasteGuard={pasteGuard}
-        site={site}
-        internalUrl={internalUrl}
-        protection={protection}
-        protectionBusy={protectionBusy}
-        onProtectionLevel={onProtectionChange}
-        onToggleSiteProtection={onToggleSiteProtection}
-        onClearSiteData={onClearSiteData}
-      />
+      <div className="relative min-w-0 flex-1">
+        <Omnibox
+          value={address}
+          onChange={onAddressChange}
+          onRun={onRun}
+          onFocusChange={(focused) => {
+            setAddressFocused(focused)
+            onAddressFocusChange(focused)
+          }}
+          suggestions={suggestions}
+          defaultEngine={defaultEngine}
+          customs={customs}
+          sessionChip={sessionChip}
+          hint={omniboxHint}
+          pasteGuard={pasteGuard}
+          site={site}
+          internalUrl={internalUrl}
+          protection={protection}
+          protectionBusy={protectionBusy}
+          onProtectionLevel={onProtectionChange}
+          onToggleSiteProtection={onToggleSiteProtection}
+          onClearSiteData={onClearSiteData}
+        />
+        {splitSuggestion && !splitActive && !addressFocused && !exiting && pillClass && (
+          <div
+            ref={pillRef}
+            data-testid="split-view-suggestion"
+            role="status"
+            className={pillClass}
+            onAnimationEnd={handleAnimationEnd}
+          >
+            <Lightbulb size={12} className="shrink-0 text-[var(--devlens-accent)]" />
+            <button
+              type="button"
+              onClick={onOpenSplitSuggestion}
+              className="min-w-0 truncate text-left hover:text-ink-100"
+              title={`Open ${splitSuggestion.firstTitle} and ${splitSuggestion.secondTitle} side by side`}
+            >
+              Compare these two tabs? Open Split View
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss Split View suggestion"
+              onClick={handleDismiss}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-600 hover:bg-white/[0.06] hover:text-ink-200"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        )}
+        {exiting && (
+          <div
+            className={pillClass}
+            onAnimationEnd={handleAnimationEnd}
+            aria-hidden="true"
+          >
+            <Lightbulb size={12} className="shrink-0 text-[var(--devlens-accent)]" />
+            <span className="min-w-0 truncate">
+              Compare these two tabs? Open Split View
+            </span>
+          </div>
+        )}
+      </div>
+
+      {splitActive && (
+        <IconButton label="Close Split View" pressed onClick={onExitSplit} testId="close-split-view">
+          <Columns2 size={14} />
+        </IconButton>
+      )}
 
       {/* Bookmarks are part of being a browser, so they stay in both modes - but only on a page.
           On the dashboard there is nothing to save, so the star is absent until there is. */}
@@ -410,3 +516,4 @@ export function Toolbar({
     </header>
   )
 }
+

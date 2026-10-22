@@ -18,6 +18,19 @@ let activePath = ''
 let loaded = false
 let saveTimer: NodeJS.Timeout | null = null
 
+/** Derive a stable partition suffix from a workspace path.
+ * Uses only lowercase alphanumerics and hyphens, max 48 chars,
+ * so it is safe as an Electron session identifier. */
+function slugFromPath(path: string): string {
+  const withoutDrive = path.replace(/^[a-zA-Z]:/, '')
+  return withoutDrive.replace(/[\/\\]/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48)
+}
+
+/** Return the Electron partition string for a workspace path. */
+export function workspacePartition(path: string): string {
+  return `persist:devlens-ws-${slugFromPath(path)}`
+}
+
 function stateFile(): string {
   return join(app.getPath('userData'), 'workspaces.json')
 }
@@ -31,6 +44,8 @@ function loadWorkspaces(defaultRoot: string): void {
     if (existsSync(file)) {
       const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { entries?: WorkspaceEntry[]; active?: string }
       entries = Array.isArray(parsed.entries) ? parsed.entries.slice(0, LIMIT) : []
+      // Backfill missing partition fields on existing entries
+      entries = entries.map(entry => entry.partition ? entry : { ...entry, partition: workspacePartition(entry.path) })
       activePath = typeof parsed.active === 'string' ? parsed.active : ''
     }
   } catch (error) {
@@ -77,7 +92,8 @@ function describe(path: string): WorkspaceEntry {
     packageName: null,
     framework: null,
     lastOpenedAt: Date.now(),
-    active: false
+    active: false,
+    partition: workspacePartition(path)
   }
 
   try {

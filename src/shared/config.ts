@@ -33,6 +33,16 @@ export interface DevLensConfig {
     temperature?: number
     maxTokens?: number
   }
+  oauth?: {
+    google?: {
+      /** Public desktop OAuth client id from Google Cloud Console. */
+      clientId?: string
+      /** Must exactly match an authorized redirect URI on that OAuth client. */
+      redirectUri?: string
+      /** Space-separated scopes are normalized by the main process. */
+      scopes?: string[]
+    }
+  }
   interceptor?: {
     /** Start capturing and applying rules immediately. */
     enabled?: boolean
@@ -107,6 +117,12 @@ export interface ResolvedAiConfig {
   maxTokens: number
 }
 
+export interface ResolvedGoogleOAuthConfig {
+  clientId: string
+  redirectUri: string
+  scopes: string[]
+}
+
 export interface ResolvedInterceptorConfig {
   enabled: boolean
   pauseTimeoutMs: number
@@ -140,6 +156,9 @@ export interface ResolvedConfig {
   mobile: { width: number; height: number }
   configPath: string | null
   ai: ResolvedAiConfig
+  oauth: {
+    google: ResolvedGoogleOAuthConfig
+  }
   interceptor: ResolvedInterceptorConfig
   reportOutputDir: string | null
   omnibox: { searchEngine: 'google' | 'brave' | 'duckduckgo'; historyLimit: number }
@@ -442,6 +461,13 @@ export const DEFAULT_CONFIG = {
     apiKeyEnv: 'OPENAI_API_KEY',
     temperature: 0.2,
     maxTokens: 900
+  },
+  oauth: {
+    google: {
+      clientId: '',
+      redirectUri: 'devlens://auth-callback',
+      scopes: ['openid', 'email', 'profile']
+    }
   },
   interceptor: {
     enabled: true,

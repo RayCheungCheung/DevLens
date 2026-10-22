@@ -267,8 +267,9 @@ export function OmniboxSettingsContent({
   return (
     <div data-testid="omnibox-settings" className="flex w-full flex-col gap-4">
       <p className="text-[11px] leading-5 text-ink-400">
-        Search with <span className="font-mono text-ink-200">@</span>, jump directly with{' '}
-        <span className="font-mono text-ink-200">#</span>. Both lists use the order shown here.
+        Search with <span className="font-mono text-ink-200">@</span>, or open and search inside a
+        site with <span className="font-mono text-ink-200">#</span>. Both lists use the order shown
+        here.
       </p>
 
       <section

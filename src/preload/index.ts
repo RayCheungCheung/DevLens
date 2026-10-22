@@ -16,9 +16,11 @@ import type {
   BookmarkDropPosition,
   CookieRecord,
   BrowserProfile,
+  BrowserProfilePatch,
   ConsoleLogEntry,
   GuestRegistration,
   GuestStatusEvent,
+  FaviconUpdatedEvent,
   GhostSessionState,
   HistoryEntry,
   ClipboardVerdict,
@@ -31,18 +33,26 @@ import type {
   ProfileSettings,
   ProtectionState,
   WimhState,
+  ThreatState,
+  ThreatAlert,
   WorkspaceEntry,
   InterceptorRule,
   InterceptorSnapshot,
   NetworkEntry,
   OpenInIdeRequest,
   OpenInIdeResult,
+  PermissionEntry,
   RepeaterRequest,
   RepeaterResponse,
   RemoteFileRequest,
   RemoteImageResult,
   GuestInspectRequest,
   GuestInspectResult,
+  GuestDebuggerEvent,
+  GuestDebuggerRequest,
+  GuestDebuggerResult,
+  GoogleOAuthStartResult,
+  GoogleOAuthStatus,
   RequestEvent,
   ResumeRequestPayload,
   SaveTextRequest,
@@ -67,6 +77,7 @@ import type {
 import type { AppIconStyle, ContentThemeMode } from '../shared/appearance'
 import type { LanguagePreferences } from '../shared/languages'
 import type { IdeOption } from '../shared/ide'
+import type { HotkeyActionId } from '../shared/hotkeys'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): Unsubscribe {
   const handler = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
@@ -89,6 +100,9 @@ const api: DevLensApi = {
   /** Closes this window: the renderer's Ctrl/Cmd+W with a single tab left. */
   windowClose: (): void => ipcRenderer.send(IPC.windowClose),
 
+  /** Opens the shell renderer's DevTools, where the hidden developer API lives. */
+  shellDevToolsOpen: (): Promise<boolean> => ipcRenderer.invoke(IPC.shellDevToolsOpen),
+
   /** Open a file (optionally at a line) in the configured editor via its URI scheme. */
   openInIde: (request: OpenInIdeRequest): Promise<OpenInIdeResult> =>
     ipcRenderer.invoke(IPC.openInIde, request),
@@ -105,6 +119,8 @@ const api: DevLensApi = {
   /** Navigation lifecycle of a guest (loading / ready / failed). */
   onGuestStatus: (listener: (event: GuestStatusEvent) => void): Unsubscribe =>
     subscribe(IPC.guestStatus, listener),
+  onFaviconUpdated: (listener: (event: FaviconUpdatedEvent) => void): Unsubscribe =>
+    subscribe(IPC.faviconUpdated, listener),
 
   /* ---------------- AI debugger ---------------- */
 
@@ -119,6 +135,16 @@ const api: DevLensApi = {
     subscribe(IPC.aiStream, listener),
   aiOpenSignInWindow: (request: AiSignInWindowRequest): Promise<AiSignInWindowResult> =>
     ipcRenderer.invoke(IPC.aiOpenSignInWindow, request),
+
+  /* ---------------- Google OAuth ---------------- */
+
+  googleAuthStatus: (): Promise<GoogleOAuthStatus> => ipcRenderer.invoke(IPC.googleAuthStatus),
+  googleAuthStart: (): Promise<GoogleOAuthStartResult> =>
+    ipcRenderer.invoke(IPC.googleAuthStart),
+  googleAuthLogout: (): Promise<GoogleOAuthStatus> =>
+    ipcRenderer.invoke(IPC.googleAuthLogout),
+  onGoogleAuthChanged: (listener: (status: GoogleOAuthStatus) => void): Unsubscribe =>
+    subscribe(IPC.googleAuthChanged, listener),
 
   /* ---------------- Interceptor and repeater ---------------- */
 
@@ -173,6 +199,12 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.pageCommand, input),
   guestInspect: (input: GuestInspectRequest): Promise<GuestInspectResult> =>
     ipcRenderer.invoke(IPC.guestInspect, input),
+  guestDebuggerSend: (input: GuestDebuggerRequest): Promise<GuestDebuggerResult> =>
+    ipcRenderer.invoke(IPC.guestDebuggerSend, input),
+  guestDebuggerDetach: (webContentsId: number): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.guestDebuggerDetach, webContentsId),
+  onGuestDebuggerEvent: (listener: (events: GuestDebuggerEvent[]) => void): Unsubscribe =>
+    subscribe(IPC.guestDebuggerEvent, listener),
   pageZoom: (webContentsId: number): Promise<number> =>
     ipcRenderer.invoke(IPC.pageZoom, webContentsId),
   pageZoomBy: (webContentsId: number, delta: number): Promise<number> =>
@@ -184,6 +216,8 @@ const api: DevLensApi = {
   ): Unsubscribe => subscribe(IPC.findInPageRequested, listener),
   onReloadViewportsRequested: (listener: () => void): Unsubscribe =>
     subscribe(IPC.reloadViewportsRequested, listener),
+  onHotkeyTriggered: (listener: (action: HotkeyActionId) => void): Unsubscribe =>
+    subscribe(IPC.guestHotkeyTriggered, listener),
 
   /* ---------------- Omnibox ---------------- */
 
@@ -349,6 +383,8 @@ const api: DevLensApi = {
     partition?: string
   ): Promise<{ ok: boolean; cleared: string[] }> =>
     ipcRenderer.invoke(IPC.sessionClearData, { profile, partition }),
+  sessionClearCache: (partition?: string): Promise<{ ok: boolean; error: string | null }> =>
+    ipcRenderer.invoke(IPC.sessionClearCache, partition),
 
   /** "Forget this site": cookies and storage for one origin. */
   sessionClearSite: (
@@ -366,6 +402,10 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.cookiesList, input),
   cookiesRemove: (input: { url: string; name: string; partition?: string }): Promise<boolean> =>
     ipcRenderer.invoke(IPC.cookiesRemove, input),
+
+  /** Browser permissions for one origin. */
+  permissionsQuery: (url: string): Promise<PermissionEntry[]> =>
+    ipcRenderer.invoke(IPC.permissionsQuery, url),
 
   /* ---------------- max-protection private tabs ---------------- */
 
@@ -397,6 +437,18 @@ const api: DevLensApi = {
     ipcRenderer.invoke(IPC.wimhNotePasteBlocked, reason),
   onWimhChanged: (listener: (state: WimhState) => void): Unsubscribe =>
     subscribe(IPC.wimhChanged, listener),
+
+  /* Threat detection (extreme protection) */
+
+  threatState: (): Promise<ThreatState> => ipcRenderer.invoke(IPC.threatState),
+
+  threatDismiss: (): void => ipcRenderer.send(IPC.threatDismiss),
+
+  onThreatAlert: (listener: (alert: ThreatAlert) => void): Unsubscribe =>
+    subscribe(IPC.threatAlert, listener),
+
+  onThreatChanged: (listener: (state: ThreatState) => void): Unsubscribe =>
+    subscribe(IPC.threatChanged, listener),
 
   /* ---------------- on-demand inspection lease ---------------- */
 
@@ -444,6 +496,8 @@ const api: DevLensApi = {
   profilesCreate: (
     name: string | { name: string; avatar?: ProfileAvatar }
   ): Promise<BrowserProfile[]> => ipcRenderer.invoke(IPC.profilesCreate, name),
+  profilesUpdate: (id: string, patch: BrowserProfilePatch): Promise<BrowserProfile[]> =>
+    ipcRenderer.invoke(IPC.profilesUpdate, { id, patch }),
   profilesSwitch: (id: string): Promise<BrowserProfile[]> =>
     ipcRenderer.invoke(IPC.profilesSwitch, id),
   profilesDelete: (id: string): Promise<BrowserProfile[]> =>
@@ -452,7 +506,80 @@ const api: DevLensApi = {
     subscribe(IPC.profilesChanged, listener),
   profilesSettings: (): Promise<ProfileSettings> => ipcRenderer.invoke(IPC.profilesSettings),
   profilesSetAskOnStartup: (ask: boolean): Promise<ProfileSettings> =>
-    ipcRenderer.invoke(IPC.profilesSetAskOnStartup, ask)
+    ipcRenderer.invoke(IPC.profilesSetAskOnStartup, ask),
+  profilePreferencesGet: (id: string): Promise<ProfilePreferences> =>
+    ipcRenderer.invoke(IPC.profilePreferencesGet, id),
+  profilePreferencesSet: (
+    id: string,
+    patch: ProfilePreferencesPatch
+  ): Promise<ProfilePreferences> => ipcRenderer.invoke(IPC.profilePreferencesSet, { id, patch }),
+
+  onWorkspacePartitionChanged: (listener: (partition: string | null) => void): Unsubscribe =>
+    subscribe(IPC.workspacePartitionChanged, listener)
 }
 
+// ---------------------------------------------------------------------------
+// Threat detection input sampling
+//
+// The shell preload hooks into DOM events at the capture phase to monitor mouse
+// movement entropy and input trustworthiness. When WImH mode is active, samples
+// are forwarded to the main process's threat detection engine.
+// ---------------------------------------------------------------------------
+
+/** If a mouse sample arrived in the last 16ms, skip to avoid IPC flood. */
+let lastMouseSampleMs = 0
+
+/**
+ * Whether input monitoring is active. Toggled by the main process when WImH
+ * enters/exits, communicated through a private IPC channel.
+ */
+let inputMonitoringActive = false
+
+ipcRenderer.on('devlens:threat:monitoring', (_event, active: boolean) => {
+  inputMonitoringActive = active
+})
+
+document.addEventListener(
+  'mousemove',
+  (event) => {
+    if (!inputMonitoringActive) return
+    if (!event.isTrusted) {
+      ipcRenderer.send(IPC.threatUntrustedInput, 'mousemove')
+      return
+    }
+    const now = Date.now()
+    if (now - lastMouseSampleMs < 16) return
+    lastMouseSampleMs = now
+    ipcRenderer.send(IPC.threatMouseSample, {
+      x: event.clientX,
+      y: event.clientY,
+      timestamp: now
+    })
+  },
+  { capture: true, passive: true }
+)
+
+document.addEventListener(
+  'mousedown',
+  (event) => {
+    if (!inputMonitoringActive) return
+    if (!event.isTrusted) {
+      ipcRenderer.send(IPC.threatUntrustedInput, 'mousedown')
+    }
+  },
+  { capture: true }
+)
+
+document.addEventListener(
+  'keydown',
+  (event) => {
+    if (!inputMonitoringActive) return
+    if (!event.isTrusted) {
+      ipcRenderer.send(IPC.threatUntrustedInput, 'keydown')
+    }
+  },
+  { capture: true }
+)
+
 contextBridge.exposeInMainWorld('devlens', api)
+

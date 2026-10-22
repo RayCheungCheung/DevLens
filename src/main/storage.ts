@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { activeProfileId } from './profiles'
+import { profileDataDirPathFor } from './profile-paths'
 import type { ProfileDiskUsage } from '../shared/privacy'
 
 /**
@@ -16,8 +16,12 @@ import type { ProfileDiskUsage } from '../shared/privacy'
  * very next read and write, which is what the stores below rely on.
  */
 export function profileDataDir(): string {
-  const id = activeProfileId()
-  const dir = join(app.getPath('userData'), 'profiles', id)
+  return profileDataDirFor(activeProfileId())
+}
+
+/** Storage directory for a named profile, without switching the active identity. */
+export function profileDataDirFor(profileId: string): string {
+  const dir = profileDataDirPathFor(profileId)
   try {
     mkdirSync(dir, { recursive: true })
   } catch (error) {
@@ -29,6 +33,10 @@ export function profileDataDir(): string {
 /** Absolute path of a file inside the active profile's data directory. */
 export function profileFile(name: string): string {
   return join(profileDataDir(), name)
+}
+
+export function profileFileFor(profileId: string, name: string): string {
+  return join(profileDataDirFor(profileId), name)
 }
 
 /** Actual bytes held by this profile's local data directory. */

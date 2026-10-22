@@ -8,6 +8,7 @@ import {
 import { hardenSession } from './sessions'
 import { enforceRamOnly } from './wimh'
 import { attachDownloadSession, cleanupPrivateDownloadHistory } from './downloads'
+import { clearBrowserFingerprint, rotateBrowserFingerprint } from './fingerprint'
 
 /**
  * Private tab sessions.
@@ -87,6 +88,7 @@ export async function openPrivateTab(tabId: string): Promise<PrivateTabState> {
   await ses.clearStorageData()
   await ses.clearCache()
   await ses.clearAuthCache()
+  rotateBrowserFingerprint(ses, 'private')
 
   const state: PrivateTabState = {
     tabId,
@@ -118,6 +120,7 @@ export async function closePrivateTab(tabId: string): Promise<PrivateTabState | 
 
   tabs.delete(tabId)
   const ses = session.fromPartition(state.partition, { cache: false })
+  clearBrowserFingerprint(ses)
   await cleanupPrivateDownloadHistory(ses)
   await wipePrivateSession(ses)
   deps.onChanged(privateTabsNow())

@@ -49,8 +49,9 @@ import {
   type LanguagePreferences
 } from '../shared/languages'
 import { activeProfileId } from './profiles'
-import { profileFile } from './storage'
+import { profileFile, profileFileFor } from './storage'
 import { mergeDownloadPreferences, sanitizeDownloadPreferences } from '../shared/downloads'
+import { sanitizeHotkeyPreferences } from '../shared/hotkeys'
 
 /**
  * Small per-profile preferences.
@@ -78,34 +79,41 @@ function storeFile(): string {
   return profileFile('preferences.json')
 }
 
+function sanitizePreferences(parsed: Partial<ProfilePreferences> | null): ProfilePreferences {
+  return {
+    aiProvider: isAiSiteId(parsed?.aiProvider) ? parsed.aiProvider : DEFAULT_AI_SITE,
+    omnibox: sanitizeOmnibox(parsed?.omnibox),
+    toolbar: sanitizeToolbar(parsed?.toolbar),
+    mobile: sanitizeMobile(parsed?.mobile),
+    launchpad: sanitizeLaunchpad(parsed?.launchpad, parsed?.browser as LegacyBrowserPreferences),
+    privacy: sanitizePrivacy(parsed?.privacy),
+    appearance: sanitizeAppearance(parsed?.appearance),
+    tabs: sanitizeTabs(parsed?.tabs),
+    languages: sanitizeLanguages(parsed?.languages),
+    browser: sanitizeBrowser(parsed?.browser),
+    about: sanitizeAbout(parsed?.about),
+    downloads: sanitizeDownloadPreferences(parsed?.downloads),
+    developer: sanitizeDeveloper(parsed?.developer),
+    hotkeys: sanitizeHotkeyPreferences(parsed?.hotkeys)
+  }
+}
+
+function readPreferencesFile(file: string): ProfilePreferences {
+  try {
+    if (!existsSync(file)) return { ...DEFAULTS }
+    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Partial<ProfilePreferences>
+    return sanitizePreferences(parsed)
+  } catch (error) {
+    console.warn('[devlens] could not read preferences', error)
+    return { ...DEFAULTS }
+  }
+}
+
 function load(): void {
   const profileId = activeProfileId()
   if (loadedFor === profileId) return
   loadedFor = profileId
-  preferences = { ...DEFAULTS }
-  try {
-    const file = storeFile()
-    if (!existsSync(file)) return
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Partial<ProfilePreferences>
-    preferences = {
-      aiProvider: isAiSiteId(parsed?.aiProvider) ? parsed.aiProvider : DEFAULT_AI_SITE,
-      omnibox: sanitizeOmnibox(parsed?.omnibox),
-      toolbar: sanitizeToolbar(parsed?.toolbar),
-      mobile: sanitizeMobile(parsed?.mobile),
-      launchpad: sanitizeLaunchpad(parsed?.launchpad, parsed?.browser as LegacyBrowserPreferences),
-      privacy: sanitizePrivacy(parsed?.privacy),
-      appearance: sanitizeAppearance(parsed?.appearance),
-      tabs: sanitizeTabs(parsed?.tabs),
-      languages: sanitizeLanguages(parsed?.languages),
-      browser: sanitizeBrowser(parsed?.browser),
-      about: sanitizeAbout(parsed?.about),
-      downloads: sanitizeDownloadPreferences(parsed?.downloads),
-      developer: sanitizeDeveloper(parsed?.developer)
-    }
-  } catch (error) {
-    console.warn('[devlens] could not read preferences', error)
-    preferences = { ...DEFAULTS }
-  }
+  preferences = readPreferencesFile(storeFile())
 }
 
 function scheduleSave(): void {
@@ -144,56 +152,90 @@ export function preferencesNow(): ProfilePreferences {
   return { ...preferences }
 }
 
-/** Applies a patch, ignoring anything that is not a known value. */
-export function setPreferences(patch: ProfilePreferencesPatch): ProfilePreferences {
-  load()
-  if (isAiSiteId(patch.aiProvider)) preferences.aiProvider = patch.aiProvider
-  if (patch.omnibox) preferences.omnibox = sanitizeOmnibox({ ...preferences.omnibox, ...patch.omnibox })
-  if (patch.toolbar) preferences.toolbar = sanitizeToolbar({ ...preferences.toolbar, ...patch.toolbar })
-  if (patch.mobile) preferences.mobile = sanitizeMobile({ ...preferences.mobile, ...patch.mobile })
+/** Applies a patch to any profile snapshot without touching the active profile's cache. */
+function applyPreferencesPatch(
+  current: ProfilePreferences,
+  patch: ProfilePreferencesPatch
+): ProfilePreferences {
+  const next = { ...current }
+  if (isAiSiteId(patch.aiProvider)) next.aiProvider = patch.aiProvider
+  if (patch.omnibox) next.omnibox = sanitizeOmnibox({ ...current.omnibox, ...patch.omnibox })
+  if (patch.toolbar) next.toolbar = sanitizeToolbar({ ...current.toolbar, ...patch.toolbar })
+  if (patch.mobile) next.mobile = sanitizeMobile({ ...current.mobile, ...patch.mobile })
   if (patch.launchpad) {
-    preferences.launchpad = sanitizeLaunchpad({
-      ...preferences.launchpad,
+    next.launchpad = sanitizeLaunchpad({
+      ...current.launchpad,
       ...patch.launchpad,
-      widgets: { ...preferences.launchpad.widgets, ...patch.launchpad.widgets },
-      activity: { ...preferences.launchpad.activity, ...patch.launchpad.activity }
+      widgets: { ...current.launchpad.widgets, ...patch.launchpad.widgets },
+      activity: { ...current.launchpad.activity, ...patch.launchpad.activity }
     })
   }
   if (patch.privacy) {
-    preferences.privacy = sanitizePrivacy({ ...preferences.privacy, ...patch.privacy })
+    next.privacy = sanitizePrivacy({ ...current.privacy, ...patch.privacy })
   }
   if (patch.appearance) {
-    preferences.appearance = sanitizeAppearance({ ...preferences.appearance, ...patch.appearance })
+    next.appearance = sanitizeAppearance({ ...current.appearance, ...patch.appearance })
   }
   if (patch.tabs) {
-    preferences.tabs = sanitizeTabs({
-      ...preferences.tabs,
+    next.tabs = sanitizeTabs({
+      ...current.tabs,
       ...patch.tabs,
-      containers: patch.tabs.containers ?? preferences.tabs.containers,
-      hotkeys: patch.tabs.hotkeys ?? preferences.tabs.hotkeys
+      containers: patch.tabs.containers ?? current.tabs.containers,
+      hotkeys: patch.tabs.hotkeys ?? current.tabs.hotkeys
     })
   }
   if (patch.languages) {
-    preferences.languages = sanitizeLanguages({
-      ...preferences.languages,
+    next.languages = sanitizeLanguages({
+      ...current.languages,
       ...patch.languages,
-      webLanguages: patch.languages.webLanguages ?? preferences.languages.webLanguages,
-      offlineModels: patch.languages.offlineModels ?? preferences.languages.offlineModels,
+      webLanguages: patch.languages.webLanguages ?? current.languages.webLanguages,
+      offlineModels: patch.languages.offlineModels ?? current.languages.offlineModels,
       spellCheckLanguages:
-        patch.languages.spellCheckLanguages ?? preferences.languages.spellCheckLanguages
+        patch.languages.spellCheckLanguages ?? current.languages.spellCheckLanguages
     })
   }
-  if (patch.browser) preferences.browser = sanitizeBrowser({ ...preferences.browser, ...patch.browser })
-  if (patch.about) preferences.about = sanitizeAbout({ ...preferences.about, ...patch.about })
-  if (patch.downloads) preferences.downloads = mergeDownloadPreferences(preferences.downloads, patch.downloads)
+  if (patch.browser) next.browser = sanitizeBrowser({ ...current.browser, ...patch.browser })
+  if (patch.about) next.about = sanitizeAbout({ ...current.about, ...patch.about })
+  if (patch.downloads) next.downloads = mergeDownloadPreferences(current.downloads, patch.downloads)
   if (patch.developer) {
-    preferences.developer = sanitizeDeveloper({
-      ...preferences.developer,
+    next.developer = sanitizeDeveloper({
+      ...current.developer,
       ...patch.developer
     })
   }
+  if (patch.hotkeys) {
+    next.hotkeys = sanitizeHotkeyPreferences(patch.hotkeys)
+  }
+  return next
+}
+
+/** Applies a patch, ignoring anything that is not a known value. */
+export function setPreferences(patch: ProfilePreferencesPatch): ProfilePreferences {
+  load()
+  preferences = applyPreferencesPatch(preferences, patch)
   scheduleSave()
   return preferencesNow()
+}
+
+/** Reads a profile's preferences without making it active. */
+export function preferencesForProfile(profileId: string): ProfilePreferences {
+  const id = profileId.trim()
+  if (!id || id === activeProfileId()) return preferencesNow()
+  return readPreferencesFile(profileFileFor(id, 'preferences.json'))
+}
+
+/** Writes one profile's preferences without changing the currently active identity. */
+export function setPreferencesForProfile(
+  profileId: string,
+  patch: ProfilePreferencesPatch
+): ProfilePreferences {
+  const id = profileId.trim()
+  if (!id || id === activeProfileId()) return setPreferences(patch)
+
+  const file = profileFileFor(id, 'preferences.json')
+  const next = applyPreferencesPatch(readPreferencesFile(file), patch)
+  writeFileSync(file, JSON.stringify(next, null, 2), 'utf-8')
+  return next
 }
 
 function sanitizeLanguageCode(value: unknown, fallback: string): string {
@@ -256,6 +298,18 @@ function sanitizeTabs(input: Partial<TabsPreferences> | undefined): TabsPreferen
       label: entry.label.trim().slice(0, 60) || `Shortcut ${index + 1}`,
       shortcut: typeof entry.shortcut === 'string' ? entry.shortcut.trim().slice(0, 60) : ''
     }))
+  const groups = (Array.isArray(input?.groups) ? input.groups : defaults.groups)
+    .slice(0, 20)
+    .filter((entry) => entry && typeof entry.name === 'string')
+    .map((entry, index) => ({
+      id: typeof entry.id === 'string' && entry.id ? entry.id.slice(0, 50) : `group-${index + 1}`,
+      name: entry.name.trim().slice(0, 40) || `Group ${index + 1}`,
+      color:
+        typeof entry.color === 'string' && /^#[0-9a-f]{6}$/i.test(entry.color)
+          ? entry.color
+          : '#2dd4bf',
+      collapsed: entry.collapsed === true
+    }))
   return {
     layout: input?.layout === 'vertical' ? 'vertical' : 'horizontal',
     switchToNewTabs: input?.switchToNewTabs !== false,
@@ -263,6 +317,7 @@ function sanitizeTabs(input: Partial<TabsPreferences> | undefined): TabsPreferen
     mruSwitching: input?.mruSwitching === true,
     hoverPreview: input?.hoverPreview !== false,
     tabGroups: input?.tabGroups !== false,
+    groups,
     taskbarPreviews: input?.taskbarPreviews !== false,
     containersEnabled: input?.containersEnabled === true,
     containers,
@@ -457,6 +512,11 @@ function sanitizeLaunchpad(
           : defaults.startupTabs,
     startupUrl: normalizeWebUrl(input?.startupUrl, defaults.startupUrl),
     checkDefaultBrowser: input?.checkDefaultBrowser !== false,
+    shortcutsVisible: input?.shortcutsVisible !== false,
+    shortcutRows: Number.isFinite(Number(input?.shortcutRows))
+      ? Math.min(4, Math.max(1, Math.round(Number(input?.shortcutRows))))
+      : defaults.shortcutRows,
+    widgetsVisible: input?.widgetsVisible !== false,
     widgets: {
       clock: input?.widgets?.clock !== false,
       devSpotlight: input?.widgets?.devSpotlight !== false,
@@ -488,7 +548,10 @@ function sanitizeLaunchpadSession(input: Partial<LaunchpadSession> | undefined):
     .map((tab) => ({
       url: String(tab.url).slice(0, 4096),
       title: String(tab.title ?? '').slice(0, 300),
-      ...(tab.pinned === true ? { pinned: true } : {})
+      ...(tab.pinned === true ? { pinned: true } : {}),
+      ...(typeof tab.groupId === 'string' && tab.groupId
+        ? { groupId: tab.groupId.slice(0, 50) }
+        : {})
     }))
   const activeIndex = Number(input?.activeIndex)
   return {

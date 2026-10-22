@@ -3,6 +3,7 @@ import { dialog, type BrowserWindow } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import {
   parseBookmarkFile,
+  safeBookmarkUrl,
   toJsonBookmarks,
   toNetscapeBookmarks,
   type ParsedBookmark
@@ -38,6 +39,7 @@ import { profileFile } from './storage'
 
 /** Bound on how much a profile can accumulate; a bookmarks file is not a database. */
 const LIMIT = 300
+const MAX_IMPORT_CHARS = 8_000_000
 
 interface StoredFile {
   version: 2
@@ -89,35 +91,51 @@ function normaliseLocation(value: unknown): BookmarkLocation {
 }
 
 /** Drops anything malformed rather than letting it reach the renderer. */
-function sanitiseNode(input: unknown): BookmarkNode | null {
-  if (!input || typeof input !== 'object') return null
+function sanitiseNode(input: unknown, depth = 0): BookmarkNode | null {
+  if (!input || typeof input !== 'object' || depth > 32) return null
   const raw = input as Partial<BookmarkNode>
   const kind: BookmarkNodeKind =
     raw.kind === 'folder' || raw.kind === 'separator' ? raw.kind : 'bookmark'
-  const id = typeof raw.id === 'string' && raw.id ? raw.id : newId(kind)
+  const id =
+    typeof raw.id === 'string' && /^[a-zA-Z0-9:_-]{1,100}$/.test(raw.id)
+      ? raw.id
+      : newId(kind)
   const addedAt = typeof raw.addedAt === 'number' ? raw.addedAt : Date.now()
 
   if (kind === 'separator') return { id, kind, addedAt }
   if (kind === 'folder') {
     const children = Array.isArray(raw.children)
-      ? raw.children.map(sanitiseNode).filter((node): node is BookmarkNode => node !== null)
+      ? raw.children
+          .slice(0, LIMIT)
+          .map((child) => sanitiseNode(child, depth + 1))
+          .filter((node): node is BookmarkNode => node !== null)
       : []
-    const title = typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'New folder'
+    const title =
+      typeof raw.title === 'string' && raw.title.trim()
+        ? raw.title.trim().slice(0, 300)
+        : 'New folder'
     return { id, kind, addedAt, title, children }
   }
-  if (typeof raw.url !== 'string') return null
+  const url = safeBookmarkUrl(raw.url)
+  if (!url) return null
   return {
     id,
     kind: 'bookmark',
     addedAt,
-    url: raw.url,
-    title: typeof raw.title === 'string' && raw.title ? raw.title : raw.url
+    url,
+    title:
+      typeof raw.title === 'string' && raw.title
+        ? raw.title.trim().slice(0, 300)
+        : url
   }
 }
 
 function sanitiseRoot(input: unknown): BookmarkNode[] {
   if (!Array.isArray(input)) return []
-  return input.map(sanitiseNode).filter((node): node is BookmarkNode => node !== null)
+  return input
+    .slice(0, LIMIT)
+    .map((node) => sanitiseNode(node))
+    .filter((node): node is BookmarkNode => node !== null)
 }
 
 /**
@@ -170,6 +188,7 @@ function load(): void {
     const file = storeFile()
     if (!existsSync(file)) return
     const raw = readFileSync(file, 'utf-8')
+    if (raw.length > MAX_IMPORT_CHARS) throw new Error('bookmark store is larger than 8 MB')
     const parsed = parseStore(raw)
     tree = parsed.tree
     options = parsed.options
@@ -415,7 +434,7 @@ export function saveBookmark(input: {
   if (!url) return bookmarkSnapshot()
 
   const target = containerFor(input.location)
-  const title = input.title?.trim() || url
+  const title = input.title?.trim().slice(0, 300) || url
   const existing = findByUrl(url)
 
   if (existing) {
@@ -694,24 +713,29 @@ const EXPORT_FILTERS = [
 
 /** Turns what a file declared into real nodes, with fresh ids. */
 function toNodes(parsed: ParsedBookmark[]): BookmarkNode[] {
-  return parsed.map((node) => {
+  const out: BookmarkNode[] = []
+  for (const node of parsed) {
     if (node.kind === 'folder') {
-      return {
+      out.push({
         id: newId('folder'),
         kind: 'folder' as const,
         addedAt: node.addedAt ?? Date.now(),
-        title: node.title ?? 'Folder',
+        title: (node.title ?? 'Folder').slice(0, 300),
         children: toNodes(node.children ?? [])
-      }
+      })
+      continue
     }
-    return {
+    const url = safeBookmarkUrl(node.url)
+    if (!url) continue
+    out.push({
       id: newId('bookmark'),
       kind: 'bookmark' as const,
       addedAt: node.addedAt ?? Date.now(),
-      url: node.url,
-      title: node.title || node.url
-    }
-  })
+      url,
+      title: (node.title || url).slice(0, 300)
+    })
+  }
+  return out
 }
 
 /**
@@ -809,6 +833,16 @@ export async function importBookmarks(input: {
     }
 
     const text = readFileSync(file, 'utf-8')
+    if (text.length > MAX_IMPORT_CHARS) {
+      return {
+        ok: false,
+        file,
+        imported: 0,
+        skipped: 0,
+        snapshot: bookmarkSnapshot(),
+        error: 'that bookmark file is larger than 8 MB'
+      }
+    }
     /**
      * A parse failure is reported as one sentence, never as the parser's own message: a JSON error
      * quotes the file it failed on, and this path can be reached with a path the renderer named.
@@ -922,13 +956,5 @@ export async function exportBookmarks(input?: {
 }
 
 function normalise(url: string): string | null {
-  const trimmedUrl = url.trim()
-  if (!trimmedUrl) return null
-  try {
-    const parsed = new URL(trimmedUrl)
-    parsed.hash = ''
-    return ['http:', 'https:', 'file:'].includes(parsed.protocol) ? parsed.toString() : null
-  } catch {
-    return null
-  }
+  return safeBookmarkUrl(url)
 }

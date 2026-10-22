@@ -1,7 +1,9 @@
 interface LensyMascotProps {
   happy?: boolean
   shield?: boolean
-  pose?: 'full' | 'peek'
+  /** The shield Lensy holds can reflect a secure or warning connection. */
+  shieldState?: 'secure' | 'insecure'
+  pose?: 'full' | 'peek' | 'private'
   size?: number
   showName?: boolean
 }
@@ -9,6 +11,7 @@ interface LensyMascotProps {
 export function LensyMascot({
   happy = false,
   shield = false,
+  shieldState = 'secure',
   pose = 'full',
   size = 98,
   showName = true
@@ -16,7 +19,19 @@ export function LensyMascot({
   return (
     <div
       data-testid="lensy-mascot"
-      data-variant={pose === 'peek' ? 'peek' : shield ? 'shield' : happy ? 'happy' : 'neutral'}
+      data-shield={shield ? 'true' : 'false'}
+      data-shield-state={shield ? shieldState : undefined}
+      data-variant={
+        pose === 'peek'
+          ? 'peek'
+          : pose === 'private'
+            ? 'private'
+            : shield
+              ? 'shield'
+              : happy
+                ? 'happy'
+                : 'neutral'
+      }
       className="flex shrink-0 flex-col items-center"
     >
       <svg
@@ -25,7 +40,9 @@ export function LensyMascot({
         viewBox="0 0 120 120"
         role="img"
         aria-label={
-          pose === 'peek'
+          pose === 'private'
+            ? 'Lensy wearing opaque private search glasses with closed eyes'
+            : pose === 'peek'
             ? 'Lensy peeking in from the edge'
             : shield
               ? 'Lensy holding a shield'
@@ -33,7 +50,84 @@ export function LensyMascot({
         }
         className="drop-shadow-[0_12px_20px_rgba(0,0,0,0.28)]"
       >
-        {pose === 'peek' ? (
+        {pose === 'private' ? (
+          <g>
+            <rect
+              x="24"
+              y="29"
+              width="72"
+              height="69"
+              rx="24"
+              fill="var(--devlens-accent-soft)"
+              stroke="var(--devlens-accent-line)"
+              strokeWidth="2.5"
+            />
+            <rect
+              x="32"
+              y="37"
+              width="56"
+              height="53"
+              rx="18"
+              fill="#0b0d10"
+              stroke="var(--devlens-accent)"
+              strokeWidth="2"
+            />
+            <path
+              d="M37 30Q39 9 60 9Q81 9 83 30Z"
+              fill="#050607"
+              stroke="rgba(255,255,255,0.14)"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M39 22H81"
+              stroke="var(--devlens-accent)"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              opacity=".72"
+            />
+            <rect
+              x="26"
+              y="25"
+              width="68"
+              height="7"
+              rx="3.5"
+              fill="#050607"
+              stroke="rgba(255,255,255,0.14)"
+              strokeWidth="1.3"
+            />
+            <g
+              fill="#040c0c"
+              stroke="var(--devlens-accent)"
+              strokeWidth="2.4"
+              strokeLinejoin="round"
+            >
+              <circle cx="47" cy="58" r="10" />
+              <circle cx="73" cy="58" r="10" />
+              <path d="M57 58H63M35 55L37 57M83 57L85 55" fill="none" strokeLinecap="round" />
+            </g>
+            <path
+              d="M42 59Q47 55.5 52 59M68 59Q73 55.5 78 59"
+              fill="none"
+              stroke="#ecfeff"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+            />
+            <path
+              d="M52 77Q60 81 68 77"
+              fill="none"
+              stroke="#ecfeff"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+            <path
+              d="M33 85V94M87 85V94"
+              stroke="var(--devlens-accent)"
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+            <path d="M98 43l1.6 3.8 3.8 1.6-3.8 1.6-1.6 3.8-1.6-3.8-3.8-1.6 3.8-1.6z" fill="var(--devlens-accent-line)" />
+          </g>
+        ) : pose === 'peek' ? (
           <g>
             <path d="M52 20V106" stroke="var(--devlens-accent-line)" strokeWidth="2" strokeDasharray="3 5" />
             <g transform="translate(58 27)">
@@ -82,12 +176,33 @@ export function LensyMascot({
             <path d="M34 76 L43 82M86 76 L77 82" stroke="var(--devlens-accent)" strokeWidth="3.5" strokeLinecap="round" />
             <path
               d="M60 69 L87 79V93C87 104 75 111 60 116C45 111 33 104 33 93V79Z"
-              fill="var(--devlens-accent)"
+              fill={
+                shieldState === 'insecure'
+                  ? '#fbbf24'
+                  : 'var(--devlens-accent)'
+              }
               stroke="#ecfeff"
               strokeWidth="3"
               strokeLinejoin="round"
             />
-            <path d="M49 91L57 99L72 83" fill="none" stroke="#081014" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            {shieldState === 'insecure' ? (
+              <path
+                d="M50 84L70 104M70 84L50 104"
+                fill="none"
+                stroke="#081014"
+                strokeWidth="4"
+                strokeLinecap="round"
+              />
+            ) : (
+              <path
+                d="M49 91L57 99L72 83"
+                fill="none"
+                stroke="#081014"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
             <path d="M94 45l2 4.3 4.3 2-4.3 2-2 4.3-2-4.3-4.3-2 4.3-2z" fill="var(--devlens-accent)" />
           </>
         )}

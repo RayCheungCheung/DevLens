@@ -8,12 +8,27 @@ import type {
   PageCaptureRequest,
   SaveTextResult
 } from '../shared/types'
+import { fetchRemoteResource } from './safe-fetch'
 
 const MAX_BYTES = 80 * 1024 * 1024
 
+function safeMime(value: string): string {
+  const normalized = value.trim().toLowerCase()
+  return /^[a-z0-9!#$&^_.+*-]+\/[a-z0-9!#$&^_.+*-]+$/.test(normalized)
+    ? normalized
+    : 'application/octet-stream'
+}
+
 function safeName(filename: string): string {
-  const cleaned = basename(filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()
-  return cleaned || 'devlens-download'
+  let cleaned = basename(filename)
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .trim()
+    .replace(/[. ]+$/, '')
+  if (!cleaned || cleaned === '.' || cleaned === '..') cleaned = 'devlens-download'
+  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(cleaned)) {
+    cleaned = `_${cleaned}`
+  }
+  return cleaned
 }
 
 function filtersFor(extension: string): { name: string; extensions: string[] }[] {
@@ -42,9 +57,14 @@ function filtersFor(extension: string): { name: string; extensions: string[] }[]
 async function remoteBytes(url: string): Promise<{ bytes: Buffer; mime: string }> {
   if (url.startsWith('data:')) {
     const comma = url.indexOf(',')
+    if (comma < 0) throw new Error('The data URL is malformed.')
     const header = url.slice(5, comma)
     const payload = url.slice(comma + 1)
-    const mime = header.split(';')[0] || 'application/octet-stream'
+    const mime = safeMime(header.split(';')[0] ?? '')
+    const estimatedBytes = header.includes(';base64')
+      ? Math.floor((payload.length * 3) / 4)
+      : payload.length
+    if (estimatedBytes > MAX_BYTES) throw new Error('The link is larger than 80 MB.')
     const bytes = header.includes(';base64')
       ? Buffer.from(payload, 'base64')
       : Buffer.from(decodeURIComponent(payload), 'utf-8')
@@ -52,25 +72,18 @@ async function remoteBytes(url: string): Promise<{ bytes: Buffer; mime: string }
     return { bytes, mime }
   }
 
-  const parsed = new URL(url)
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Unsupported link protocol: ${parsed.protocol}`)
-  }
-  const response = await fetch(parsed, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(30_000)
+  /**
+   * Saving an image or link is a deliberate user action and may legitimately reach a
+   * LAN-hosted asset. Private targets are therefore allowed here, but metadata addresses
+   * and redirects into them remain blocked by the shared network policy.
+   */
+  const asset = await fetchRemoteResource(url, {
+    allowPrivateNetwork: true,
+    maxBytes: MAX_BYTES,
+    timeoutMs: 30_000,
+    accept: 'image/*,application/pdf,text/plain,application/octet-stream;q=0.8,*/*;q=0.5'
   })
-  if (!response.ok) throw new Error(`The server returned ${response.status}.`)
-  const length = Number(response.headers.get('content-length'))
-  if (Number.isFinite(length) && length > MAX_BYTES) {
-    throw new Error('The link is larger than 80 MB.')
-  }
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.byteLength > MAX_BYTES) throw new Error('The link is larger than 80 MB.')
-  return {
-    bytes,
-    mime: response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream'
-  }
+  return { bytes: asset.bytes, mime: safeMime(asset.mime) }
 }
 
 export async function saveRemoteFile(

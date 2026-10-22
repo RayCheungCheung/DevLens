@@ -9,6 +9,11 @@
 
 import type { BookmarkNode } from './types'
 
+const MAX_BOOKMARK_URL = 8192
+const MAX_BOOKMARK_TITLE = 300
+const MAX_PARSED_NODES = 5000
+const MAX_FOLDER_DEPTH = 32
+
 /** A node read out of a file. Ids are assigned by the store when it is merged in. */
 export interface ParsedBookmark {
   kind: 'bookmark' | 'folder'
@@ -36,8 +41,37 @@ function decodeEntities(value: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&nbsp;/gi, ' ')
-    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#(\d+);/g, (_match, code: string) => {
+      const point = Number(code)
+      return Number.isInteger(point) &&
+        point > 0 &&
+        point <= 0x10ffff &&
+        !(point >= 0xd800 && point <= 0xdfff)
+        ? String.fromCodePoint(point)
+        : '\ufffd'
+    })
     .replace(/&amp;/gi, '&')
+}
+
+/** One URL policy for imports, the bookmark store, and exported links. */
+export function safeBookmarkUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > MAX_BOOKMARK_URL) return null
+  try {
+    const parsed = new URL(trimmed)
+    if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return null
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+function safeTitle(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, MAX_BOOKMARK_TITLE)
+    : fallback
 }
 
 function escapeAttribute(value: string): string {
@@ -93,10 +127,10 @@ export function parseNetscapeBookmarks(html: string): ParseResult {
     }
 
     if (aAttributes !== undefined) {
-      const url = attribute(aAttributes, 'HREF')
+      const url = safeBookmarkUrl(attribute(aAttributes, 'HREF'))
       if (!url) continue
       const added = attribute(aAttributes, 'ADD_DATE')
-      const title = decodeEntities(aText).trim() || url
+      const title = safeTitle(decodeEntities(aText), url)
       current.children.push({
         kind: 'bookmark',
         url,
@@ -111,10 +145,11 @@ export function parseNetscapeBookmarks(html: string): ParseResult {
       const added = attribute(h3Attributes, 'ADD_DATE')
       current.children.push({
         kind: 'folder',
-        title: decodeEntities(h3Text).trim() || 'Folder',
+        title: safeTitle(decodeEntities(h3Text), 'Folder'),
         addedAt: added ? Number(added) * 1000 || undefined : undefined
       })
     }
+    if (links >= MAX_PARSED_NODES) break
   }
 
   return { nodes: stripEmptyFolders(nodes), links }
@@ -202,31 +237,40 @@ export function toNetscapeBookmarks(input: {
 export function parseJsonBookmarks(text: string): ParseResult {
   const parsed = JSON.parse(text) as unknown
 
-  const fromNode = (input: unknown): ParsedBookmark | null => {
-    if (!input || typeof input !== 'object') return null
+  const budget = { nodes: 0 }
+  const fromNode = (input: unknown, depth = 0): ParsedBookmark | null => {
+    if (!input || typeof input !== 'object' || depth > MAX_FOLDER_DEPTH) return null
+    if (budget.nodes >= MAX_PARSED_NODES) return null
     const raw = input as Record<string, unknown>
     if (raw.kind === 'folder' || Array.isArray(raw.children)) {
       const children = (Array.isArray(raw.children) ? raw.children : [])
-        .map(fromNode)
+        .map((child) => fromNode(child, depth + 1))
         .filter((node): node is ParsedBookmark => node !== null)
+      if (budget.nodes >= MAX_PARSED_NODES) return null
+      budget.nodes += 1
       return {
         kind: 'folder',
-        title: typeof raw.title === 'string' ? raw.title : 'Folder',
+        title: safeTitle(raw.title, 'Folder'),
         addedAt: typeof raw.addedAt === 'number' ? raw.addedAt : undefined,
         children
       }
     }
-    if (typeof raw.url !== 'string') return null
+    const url = safeBookmarkUrl(raw.url)
+    if (!url) return null
+    budget.nodes += 1
     return {
       kind: 'bookmark',
-      url: raw.url,
-      title: typeof raw.title === 'string' && raw.title ? raw.title : raw.url,
+      url,
+      title: safeTitle(raw.title, url),
       addedAt: typeof raw.addedAt === 'number' ? raw.addedAt : undefined
     }
   }
 
   const fromList = (list: unknown[]): ParsedBookmark[] =>
-    list.map(fromNode).filter((node): node is ParsedBookmark => node !== null)
+    list
+      .slice(0, MAX_PARSED_NODES)
+      .map((node) => fromNode(node))
+      .filter((node): node is ParsedBookmark => node !== null)
 
   let nodes: ParsedBookmark[] = []
   if (Array.isArray(parsed)) {

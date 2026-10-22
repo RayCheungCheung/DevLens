@@ -1,6 +1,11 @@
 import { ipcRenderer, webFrame } from 'electron'
 import type { IpcChannel } from '../shared/ipc'
-import type { FindHit, FindResult, ScrollSyncMessage } from '../shared/types'
+import type {
+  BrowserFingerprintProfile,
+  FindHit,
+  FindResult,
+  ScrollSyncMessage
+} from '../shared/types'
 
 /**
  * Bridge injected into every <webview> guest.
@@ -32,6 +37,243 @@ const ZOOM_WHEEL_RESULT_CHANNEL = 'devlens:viewport:zoom-wheel-result' satisfies
 const INTERACTION_CHANNEL = 'devlens:viewport:interaction' satisfies IpcChannel
 const FOLD_CHANNEL = 'devlens:viewport:fold' satisfies IpcChannel
 const MODE_CHANNEL = 'devlens:viewport:mode' satisfies IpcChannel
+const FINGERPRINT_CHANNEL = 'devlens:guest:fingerprint' satisfies IpcChannel
+
+/**
+ * Remove Chromium's automation marker before any page script runs. This is independent of
+ * fingerprint mode: it describes DevLens correctly as an interactive browser rather than a
+ * WebDriver-controlled test page.
+ */
+void webFrame
+  .executeJavaScript(
+    `(() => {
+      try {
+        Object.defineProperty(Navigator.prototype, 'webdriver', {
+          configurable: true,
+          enumerable: true,
+          get: () => undefined
+        })
+      } catch {}
+    })()`,
+    true
+  )
+  .catch(() => undefined)
+
+/**
+ * Fingerprint hardening is installed before page scripts run. The main process keys the profile
+ * to this guest's Electron session, so page-controlled renderer state cannot request a different
+ * one. In normal browsing the sync lookup returns null and the page is left untouched.
+ */
+let fingerprintProfile: BrowserFingerprintProfile | null = null
+try {
+  fingerprintProfile = ipcRenderer.sendSync(FINGERPRINT_CHANNEL) as
+    | BrowserFingerprintProfile
+    | null
+} catch {
+  // The guest must keep working if main is still starting or a channel is unavailable.
+}
+
+if (fingerprintProfile) {
+  void webFrame
+    .executeJavaScript(fingerprintInjection(fingerprintProfile), true)
+    .catch(() => undefined)
+}
+
+function fingerprintInjection(profile: BrowserFingerprintProfile): string {
+  return `(() => {
+    'use strict'
+    const profile = ${JSON.stringify(profile)}
+    const seed = Number.parseInt(profile.seed.slice(0, 8), 16) >>> 0
+    const defineGetter = (target, name, getter) => {
+      try {
+        Object.defineProperty(target, name, {
+          configurable: true,
+          enumerable: true,
+          get: getter
+        })
+      } catch {}
+    }
+    const noise = (x, y, salt) => {
+      let value = (seed ^ Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ salt) >>> 0
+      value ^= value >>> 13
+      value = Math.imul(value, 1274126177) >>> 0
+      return value ^ (value >>> 16)
+    }
+    const addPixelNoise = (data, width, height) => {
+      const pixels = Math.max(1, Math.floor(width * height))
+      const touches = Math.min(24, pixels)
+      for (let index = 0; index < touches; index += 1) {
+        const pixel = noise(index, pixels, 0x9e3779b9) % pixels
+        const offset = pixel * 4
+        const delta = (noise(pixel, width, 0x85ebca6b) & 1) === 1 ? 1 : -1
+        data[offset] = Math.max(0, Math.min(255, data[offset] + delta))
+        if ((index & 1) === 0) {
+          data[offset + 1] = Math.max(0, Math.min(255, data[offset + 1] + delta))
+        }
+      }
+    }
+
+    defineGetter(Navigator.prototype, 'hardwareConcurrency', () => profile.hardwareConcurrency)
+    defineGetter(Navigator.prototype, 'deviceMemory', () => profile.deviceMemory)
+    defineGetter(Navigator.prototype, 'language', () => profile.languages[0])
+    defineGetter(Navigator.prototype, 'languages', () => Object.freeze([...profile.languages]))
+    defineGetter(Screen.prototype, 'width', () => profile.screenWidth)
+    defineGetter(Screen.prototype, 'height', () => profile.screenHeight)
+    defineGetter(Screen.prototype, 'availWidth', () => profile.screenWidth)
+    defineGetter(Screen.prototype, 'availHeight', () => profile.screenHeight)
+    defineGetter(Screen.prototype, 'colorDepth', () => profile.colorDepth)
+    defineGetter(Screen.prototype, 'pixelDepth', () => profile.colorDepth)
+
+    const maxFingerprintCanvasPixels = 512 * 512
+    const nativeToDataURL = HTMLCanvasElement.prototype.toDataURL
+    const nativeToBlob = HTMLCanvasElement.prototype.toBlob
+    const nativeGetImageData = CanvasRenderingContext2D.prototype.getImageData
+    const isFingerprintCanvas = (canvas) =>
+      canvas.width > 0 &&
+      canvas.height > 0 &&
+      canvas.width * canvas.height <= maxFingerprintCanvasPixels
+    const noisyCopy = (canvas) => {
+      const copy = document.createElement('canvas')
+      copy.width = canvas.width
+      copy.height = canvas.height
+      const context = copy.getContext('2d', { willReadFrequently: true })
+      if (!context) return null
+      context.drawImage(canvas, 0, 0)
+      const image = nativeGetImageData.call(context, 0, 0, copy.width, copy.height)
+      addPixelNoise(image.data, copy.width, copy.height)
+      context.putImageData(image, 0, 0)
+      return copy
+    }
+
+    Object.defineProperty(HTMLCanvasElement.prototype, 'toDataURL', {
+      configurable: true,
+      writable: true,
+      value: function (...args) {
+        if (!isFingerprintCanvas(this)) return nativeToDataURL.apply(this, args)
+        try {
+          const copy = noisyCopy(this)
+          return copy ? nativeToDataURL.apply(copy, args) : nativeToDataURL.apply(this, args)
+        } catch {
+          return nativeToDataURL.apply(this, args)
+        }
+      }
+    })
+    if (typeof nativeToBlob === 'function') {
+      Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+        configurable: true,
+        writable: true,
+        value: function (callback, ...args) {
+          if (!isFingerprintCanvas(this)) return nativeToBlob.call(this, callback, ...args)
+          try {
+            const copy = noisyCopy(this)
+            return nativeToBlob.call(copy || this, callback, ...args)
+          } catch {
+            return nativeToBlob.call(this, callback, ...args)
+          }
+        }
+      })
+    }
+    Object.defineProperty(CanvasRenderingContext2D.prototype, 'getImageData', {
+      configurable: true,
+      writable: true,
+      value: function (...args) {
+        const image = nativeGetImageData.apply(this, args)
+        if (image.width * image.height <= maxFingerprintCanvasPixels) {
+          addPixelNoise(image.data, image.width, image.height)
+        }
+        return image
+      }
+    })
+
+    for (const Context of [globalThis.WebGLRenderingContext, globalThis.WebGL2RenderingContext]) {
+      if (!Context) continue
+      const nativeReadPixels = Context.prototype.readPixels
+      const nativeGetParameter = Context.prototype.getParameter
+      if (typeof nativeReadPixels === 'function') {
+        Object.defineProperty(Context.prototype, 'readPixels', {
+          configurable: true,
+          writable: true,
+          value: function (...args) {
+            const result = nativeReadPixels.apply(this, args)
+            try {
+              const pixels = args[6]
+              if (pixels && typeof pixels.length === 'number' && pixels.length >= 4) {
+                const stride = Math.max(4, Math.floor(pixels.length / 16))
+                for (let index = 0; index < pixels.length; index += stride) {
+                  const delta = (noise(index, pixels.length, 0xc2b2ae35) & 1) === 1 ? 1 : -1
+                  if (typeof pixels[index] === 'number') {
+                    pixels[index] = Math.max(0, Math.min(255, pixels[index] + delta))
+                  }
+                }
+              }
+            } catch {}
+            return result
+          }
+        })
+      }
+      if (typeof nativeGetParameter === 'function') {
+        Object.defineProperty(Context.prototype, 'getParameter', {
+          configurable: true,
+          writable: true,
+          value: function (parameter) {
+            if (parameter === 37445) return profile.gpuVendor
+            if (parameter === 37446) return profile.gpuRenderer
+            return nativeGetParameter.call(this, parameter)
+          }
+        })
+      }
+    }
+
+    if (globalThis.OfflineAudioContext) {
+      const nativeStartRendering = OfflineAudioContext.prototype.startRendering
+      Object.defineProperty(OfflineAudioContext.prototype, 'startRendering', {
+        configurable: true,
+        writable: true,
+        value: function (...args) {
+          return nativeStartRendering.apply(this, args).then((buffer) => {
+            for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+              const samples = buffer.getChannelData(channel)
+              const stride = Math.max(1, Math.floor(samples.length / 512))
+              for (let index = 0; index < samples.length; index += stride) {
+                const delta = ((noise(index, channel, 0x27d4eb2f) & 1) === 1 ? 1 : -1) * profile.audioNoise
+                samples[index] = Math.max(-1, Math.min(1, samples[index] + delta))
+              }
+            }
+            return buffer
+          })
+        }
+      })
+    }
+    if (globalThis.AnalyserNode) {
+      for (const [name, amplitude] of [
+        ['getFloatFrequencyData', profile.audioNoise * 1000],
+        ['getByteFrequencyData', 1]
+      ]) {
+        const nativeRead = AnalyserNode.prototype[name]
+        if (typeof nativeRead !== 'function') continue
+        Object.defineProperty(AnalyserNode.prototype, name, {
+          configurable: true,
+          writable: true,
+          value: function (array) {
+            const result = nativeRead.call(this, array)
+            try {
+              const stride = Math.max(1, Math.floor(array.length / 32))
+              for (let index = 0; index < array.length; index += stride) {
+                const delta = ((noise(index, array.length, 0x165667b1) & 1) === 1 ? 1 : -1) * amplitude
+                if (name === 'getByteFrequencyData') {
+                  array[index] = Math.max(0, Math.min(255, array[index] + delta))
+                } else {
+                  array[index] += delta
+                }
+              }
+            } catch {}
+            return result
+          }
+        })
+      }
+    }
+  })()`
+}
 
 /**
  * Capability lock.

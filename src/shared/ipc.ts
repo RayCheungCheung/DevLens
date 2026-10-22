@@ -8,8 +8,12 @@ export const IPC = {
   getBootstrap: 'devlens:bootstrap',
   /** renderer -> main (send): "this guest id belongs to this viewport". */
   registerGuest: 'devlens:guest:register',
+  /** guest preload -> main (sync): fingerprint profile for an isolated privacy session. */
+  guestFingerprint: 'devlens:guest:fingerprint',
   /** renderer -> main (send): close the shell window (Ctrl+W on the last tab). */
   windowClose: 'devlens:window:close',
+  /** renderer -> main (send): open DevTools for the DevLens shell renderer. */
+  shellDevToolsOpen: 'devlens:window:devtools',
   /** renderer -> main (invoke): open a file/line in the configured editor. */
   openInIde: 'devlens:ide:open',
   /** renderer -> main (invoke): installed editors detected from OS URI handlers. */
@@ -38,6 +42,14 @@ export const IPC = {
   aiStream: 'devlens:ai:stream',
   /** renderer -> main (invoke): top-level sign-in window sharing an AI partition. */
   aiOpenSignInWindow: 'devlens:ai:open-sign-in-window',
+  /** renderer -> main (invoke): current Google OAuth account state. */
+  googleAuthStatus: 'devlens:google-auth:status',
+  /** renderer -> main (invoke): start system-browser OAuth with PKCE. */
+  googleAuthStart: 'devlens:google-auth:start',
+  /** renderer -> main (invoke): remove the local Google token. */
+  googleAuthLogout: 'devlens:google-auth:logout',
+  /** main -> renderer: OAuth status changed. */
+  googleAuthChanged: 'devlens:google-auth:changed',
 
   /* HTTP interceptor and repeater ------------------------------------ */
   /** renderer -> main (invoke): current interceptor state. */
@@ -82,6 +94,12 @@ export const IPC = {
   pageCommand: 'devlens:page:command',
   /** renderer -> main (invoke): inspect a guest point or read accessibility facts. */
   guestInspect: 'devlens:guest:inspect',
+  /** renderer -> main (invoke): a scoped Chrome DevTools Protocol command for a guest. */
+  guestDebuggerSend: 'devlens:guest:debugger:send',
+  /** renderer -> main (invoke): release the embedded debugger so external DevTools can attach. */
+  guestDebuggerDetach: 'devlens:guest:debugger:detach',
+  /** main -> renderer: a CDP event for a registered guest. */
+  guestDebuggerEvent: 'devlens:guest:debugger:event',
   /** renderer -> main (invoke): the current zoom level of a guest, for the menu's zoom row. */
   pageZoom: 'devlens:page:zoom',
   /** renderer -> main (invoke): nudge a guest's logarithmic zoom level. */
@@ -92,6 +110,8 @@ export const IPC = {
   findInPageRequested: 'devlens:find:requested',
   /** guest -> renderer: Ctrl/Cmd+R or F5 should reload both viewports. */
   reloadViewportsRequested: 'devlens:viewports:reload-requested',
+  /** main -> renderer: a configurable hotkey was pressed while a guest owned focus. */
+  guestHotkeyTriggered: 'devlens:hotkey:triggered',
 
   /* Omnibox ----------------------------------------------------------- */
   /** renderer -> main (invoke): recent visited pages for suggestions. */
@@ -196,6 +216,8 @@ export const IPC = {
    * a data URL. A renderer-side DOM read feeds the hrefs; main filters and fetches the winner.
    */
   faviconExtract: 'devlens:favicon:extract',
+  /** main -> renderer: Electron reported page icons for a guest. */
+  faviconUpdated: 'devlens:favicon:updated',
   /** renderer -> main (invoke): enter the isolated ghost session. */
   ghostEnter: 'devlens:ghost:enter',
   /** renderer -> main (invoke): leave the ghost session. */
@@ -206,6 +228,8 @@ export const IPC = {
   ghostChanged: 'devlens:ghost:changed',
   /** renderer -> main (invoke): wipe cache and storage for a profile. */
   sessionClearData: 'devlens:session:clear-data',
+  /** renderer -> main (invoke): clear only the active profile's HTTP cache. */
+  sessionClearCache: 'devlens:session:clear-cache',
   /** renderer -> main (invoke): wipe cookies and storage for one origin only. */
   sessionClearSite: 'devlens:session:clear-site',
   /** renderer -> main (invoke): the cookies one origin holds, for the storage inspector. */
@@ -240,6 +264,21 @@ export const IPC = {
   wimhNotePasteBlocked: 'devlens:wimh:note-paste-blocked',
   /** main -> renderer: defense state changed. */
   wimhChanged: 'devlens:wimh:changed',
+  /* Threat detection (extreme protection) */
+  /** renderer -> main (invoke): current threat state. */
+  threatState: 'devlens:threat:state',
+  /** main -> renderer: a threat was detected and the shield should activate. */
+  threatAlert: 'devlens:threat:alert',
+  /** main -> renderer: the threat state changed (including after dismissal). */
+  threatChanged: 'devlens:threat:changed',
+  /** renderer -> main (send): the operator dismissed the protective shield. */
+  threatDismiss: 'devlens:threat:dismiss',
+  /** renderer -> main (send): a mouse sample for entropy analysis (throttled in preload). */
+  threatMouseSample: 'devlens:threat:mouse-sample',
+  /** renderer -> main (send): an untrusted input event was observed. */
+  threatUntrustedInput: 'devlens:threat:untrusted-input',
+  /** renderer -> main (send): a screen capture API attempt was detected from a guest. */
+  threatScreenCapture: 'devlens:threat:screen-capture',
   /** renderer -> main (invoke): open/close the on-demand WImH overlay. */
   inspectionSetOpen: 'devlens:inspection:set-open',
   /** renderer -> main (invoke): whether this process is observing, and from where. */
@@ -257,6 +296,8 @@ export const IPC = {
   /** renderer -> main (invoke): apply the profile's granular Shield rules. */
   protectionSetShieldRules: 'devlens:protection:set-shield-rules',
   /** main -> renderer: the level or its counters changed. */
+  /** renderer -> main (invoke): browser permissions for one origin. */
+  permissionsQuery: 'devlens:permissions:query',
   protectionChanged: 'devlens:protection:changed',
   /** renderer -> main (invoke): apply DoH mode. */
   privacyApplyNetwork: 'devlens:privacy:apply-network',
@@ -298,6 +339,8 @@ export const IPC = {
   profilesList: 'devlens:profiles:list',
   /** renderer -> main (invoke): create a profile and optionally switch to it. */
   profilesCreate: 'devlens:profiles:create',
+  /** renderer -> main (invoke): rename a profile or change its avatar. */
+  profilesUpdate: 'devlens:profiles:update',
   /** renderer -> main (invoke): switch the active profile. */
   profilesSwitch: 'devlens:profiles:switch',
   /** renderer -> main (invoke): delete a profile and wipe its storage. */
@@ -307,7 +350,13 @@ export const IPC = {
   /** renderer -> main (invoke): identity settings that are not per profile. */
   profilesSettings: 'devlens:profiles:settings',
   /** renderer -> main (invoke): toggle the "always ask on startup" prompt. */
-  profilesSetAskOnStartup: 'devlens:profiles:set-ask-on-startup'
+  profilesSetAskOnStartup: 'devlens:profiles:set-ask-on-startup',
+  /** renderer -> main (invoke): preferences for one profile without switching. */
+  profilePreferencesGet: 'devlens:profiles:preferences:get',
+  profilePreferencesSet: 'devlens:profiles:preferences:set',
+
+  /* Workspace partition broadcast */
+  workspacePartitionChanged: 'devlens:workspace:partition-changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

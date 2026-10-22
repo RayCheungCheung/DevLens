@@ -1,6 +1,7 @@
 import { clipboard, session, type BrowserWindow, type Session } from 'electron'
 import { classifyClipboardText } from '../shared/clipboard'
 import type { ClipboardVerdict, WimhEvent, WimhEventCategory, WimhState } from '../shared/types'
+import { clearBrowserFingerprint, rotateBrowserFingerprint } from './fingerprint'
 
 /**
  * WImH - "What If am Hacked" - extreme defense mode.
@@ -378,12 +379,14 @@ export async function setWimhEnabled(enabled: boolean): Promise<WimhState> {
     await ses.clearCache()
     await ses.clearAuthCache()
     await ses.clearHostResolverCache()
+    rotateBrowserFingerprint(ses, 'wimh')
     applyContentProtection(true)
     startClipboardSentinel()
     active = true
     startedAt = Date.now()
     recordEvent('session', 'extreme defense mode engaged', 'RAM-only session, clipboard sentinel armed')
   } else {
+    clearBrowserFingerprint(ses)
     applyContentProtection(false)
     stopClipboardSentinel()
     await ses.clearStorageData()

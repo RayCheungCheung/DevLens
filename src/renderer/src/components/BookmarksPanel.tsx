@@ -157,7 +157,7 @@ function NodeList({
     <>
       {nodes.map((node) => {
         if (node.kind === 'separator') {
-          return <div key={node.id} className="mx-2 my-1 h-px bg-[var(--devlens-hairline)]" />
+          return <div key={node.id} className="bookmark-separator-menu" />
         }
         if (node.kind === 'folder') {
           const expanded = open[node.id] ?? false

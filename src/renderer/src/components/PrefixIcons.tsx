@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   Ghost,
   Globe,
@@ -293,7 +294,11 @@ export function FaviconMark({
   iconUrl?: string | null
   size?: number
 }) {
-  if (iconUrl) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [iconUrl])
+  const validImage =
+    typeof iconUrl === 'string' && /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(iconUrl)
+  if (validImage && !broken) {
     return (
       <img
         data-favicon-mark="true"
@@ -303,6 +308,7 @@ export function FaviconMark({
         width={size}
         height={size}
         draggable={false}
+        onError={() => setBroken(true)}
         className="shrink-0 object-contain"
         style={{ width: size, height: size, objectFit: 'contain' }}
       />

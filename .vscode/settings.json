@@ -1,9 +1,39 @@
 {
     "python.analysis.extraPaths": [
-        "C:\\Users\\HUAWEI\\.kendryte\\k230_canmv_stubs\\2d060bef54b161c3ac65a1c4c1e2789d4ea8a544"
+        "C:\\Users\\HUAWEI\\.kendryte\\k230_canmv_stubs\\27cd7bbf0c9dbc0a3619b8775c9432acfdd7a0d7"
     ],
     "python.analysis.stubPath": "C:\\Users\\HUAWEI\\.kendryte\\k230_canmv_pylance\\14c48ef70612f5af\\typings",
     "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingModuleSource": "none"
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.jj": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/flutter/ephemeral": true,
+        "**/Flutter/ephemeral": true,
+        "**/.symlinks": true,
+        "**/.plugin_symlinks": true,
+        ".brud": true
+    },
+    "files.watcherExclude": {
+        ".git/objects/**": true,
+        ".git/subtree-cache/**": true,
+        ".hg/store/**": true,
+        "*/.git/objects/**": true,
+        "*/.git/subtree-cache/**": true,
+        "*/.hg/store/**": true,
+        "**/.dart_tool": true,
+        ".brud": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/*.code-search": true,
+        "**/.dart_tool": true,
+        ".brud": true
     }
 }

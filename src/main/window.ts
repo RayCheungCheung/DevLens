@@ -40,7 +40,7 @@ export function createShellWindow(icon?: NativeImage): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       // The shell is the only renderer allowed to embed guests.
       webviewTag: true,
       spellcheck: false
@@ -78,8 +78,13 @@ function hardenShell(window: BrowserWindow): void {
   window.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
     delete webPreferences.nodeIntegration
     webPreferences.nodeIntegration = false
+    webPreferences.nodeIntegrationInSubFrames = false
     webPreferences.contextIsolation = true
     webPreferences.webSecurity = true
+    webPreferences.sandbox = true
+    webPreferences.allowRunningInsecureContent = false
+    webPreferences.experimentalFeatures = false
+    webPreferences.spellcheck = false
 
     const src = params.src ?? ''
     const allowed =
@@ -129,7 +134,13 @@ export function applyModeMenu(mode: WorkspaceMode): void {
       { role: 'zoomIn' },
       { role: 'zoomOut' },
       { type: 'separator' },
-      { role: 'toggleDevTools' },
+      {
+        label: 'Toggle DevLens Developer Tools',
+        click: () => {
+          const target = BrowserWindow.getFocusedWindow()
+          if (target && !target.isDestroyed()) target.webContents.toggleDevTools()
+        }
+      },
       { type: 'separator' },
       { role: 'togglefullscreen' }
     ]

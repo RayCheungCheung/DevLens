@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
+import { desktopChromeUserAgent } from './user-agent'
+import { fetchRemoteResource } from './safe-fetch'
 
 /**
  * Site icons for the tab strip.
@@ -88,12 +90,15 @@ export async function faviconFor(pageUrl: string): Promise<FaviconResult> {
   const origin = originOf(pageUrl)
   if (!origin) return { dataUrl: null, source: null }
 
-  if (cache.has(origin)) return { dataUrl: cache.get(origin) ?? null, source: null }
+  const cached = cache.get(origin)
+  if (cached) return { dataUrl: cached, source: null }
 
-  const source = `${origin}/favicon.ico`
-  const dataUrl = await fetchIcon(source)
-  remember(origin, dataUrl)
-  return { dataUrl, source: dataUrl ? source : null }
+  const resolved = await fetchFirstIcon([
+    `${origin}/favicon.ico`,
+    googleFaviconUrl(pageUrl)
+  ], pageUrl)
+  remember(origin, resolved.dataUrl)
+  return resolved
 }
 
 /**
@@ -120,14 +125,52 @@ export async function faviconFromDomCandidates(
   let source: string | null = null
   let dataUrl: string | null = null
   for (const url of candidates) {
-    dataUrl = await fetchIcon(url)
+    dataUrl = await fetchIcon(url, pageUrl)
     if (dataUrl) {
       source = url
       break
     }
   }
+  if (!dataUrl) {
+    const fallback = await fetchFirstIcon([
+      `${origin}/favicon.ico`,
+      googleFaviconUrl(pageUrl)
+    ], pageUrl)
+    dataUrl = fallback.dataUrl
+    source = fallback.source
+  }
   remember(origin, dataUrl)
   return { dataUrl, source }
+}
+
+/**
+ * The authoritative page-event path. Electron supplies absolute favicon URLs after the page
+ * metadata is parsed, including icons injected by client-side frameworks that a static DOM scan
+ * can miss. Page-provided candidates win; the two conventional fallbacks run only after all of
+ * them fail.
+ */
+export async function faviconFromPageEvent(
+  pageUrl: string,
+  favicons: readonly string[]
+): Promise<FaviconResult> {
+  const origin = originOf(pageUrl)
+  if (!origin) return { dataUrl: null, source: null }
+
+  const candidates = rankIconHrefs(favicons, pageUrl)
+  for (const candidate of candidates) {
+    const dataUrl = await fetchIcon(candidate, pageUrl)
+    if (dataUrl) {
+      remember(origin, dataUrl)
+      return { dataUrl, source: candidate }
+    }
+  }
+
+  const resolved = await fetchFirstIcon([
+    `${origin}/favicon.ico`,
+    googleFaviconUrl(pageUrl)
+  ], pageUrl)
+  remember(origin, resolved.dataUrl)
+  return resolved
 }
 
 /** Called when a tab closes, so the cache never grows with dead origins. */
@@ -211,6 +254,39 @@ function remember(origin: string, dataUrl: string | null): void {
   }
 }
 
+async function fetchFirstIcon(
+  urls: Array<string | null>,
+  pageUrl: string
+): Promise<FaviconResult> {
+  for (const url of urls) {
+    if (!url) continue
+    const dataUrl = await fetchIcon(url, pageUrl)
+    if (dataUrl) return { dataUrl, source: url }
+  }
+  return { dataUrl: null, source: null }
+}
+
+/**
+ * Optional final fallback. It is not used for localhost or IP literals, where asking a public
+ * service would disclose a meaningless name and cannot produce a useful site icon.
+ */
+function googleFaviconUrl(pageUrl: string): string | null {
+  try {
+    const { hostname } = new URL(pageUrl)
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
+      hostname.includes(':')
+    ) {
+      return null
+    }
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`
+  } catch {
+    return null
+  }
+}
+
 function originOf(pageUrl: string): string | null {
   try {
     const parsed = new URL(pageUrl)
@@ -221,24 +297,28 @@ function originOf(pageUrl: string): string | null {
   }
 }
 
-async function fetchIcon(url: string): Promise<string | null> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+async function fetchIcon(url: string, pageUrl: string): Promise<string | null> {
   try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' })
-    if (!response.ok) return null
-
-    const type = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    /**
+     * A page controls this URL. Only a same-origin icon may reach the page's own
+     * local/private network; cross-origin icons must resolve to a public address.
+     */
+    const sameOrigin = new URL(url).origin === new URL(pageUrl).origin
+    const asset = await fetchRemoteResource(url, {
+      allowPrivateNetwork: sameOrigin,
+      maxBytes: MAX_BYTES,
+      timeoutMs: TIMEOUT_MS,
+      accept: 'image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5',
+      userAgent: desktopChromeUserAgent()
+    })
+    const type = asset.mime
     // Some servers answer with text/html for a missing icon; those are not images.
     if (type && !type.startsWith('image/')) return null
 
-    const bytes = Buffer.from(await response.arrayBuffer())
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) return null
+    if (asset.bytes.byteLength === 0) return null
 
-    return `data:${type || 'image/x-icon'};base64,${bytes.toString('base64')}`
+    return `data:${type === 'application/octet-stream' ? 'image/x-icon' : type};base64,${asset.bytes.toString('base64')}`
   } catch {
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }

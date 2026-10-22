@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Ban, Play, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react'
 import type { CapturedRequest, PausedRequest, RepeaterRequest, RepeaterResponse } from '@shared/types'
 import type { InterceptorStore } from '@renderer/hooks/useInterceptorStore'
@@ -121,6 +121,11 @@ export function InterceptorPanel({ store, onNotice }: InterceptorPanelProps) {
 
       {segment === 'capture' ? (
         <>
+          <TrafficSummary
+            requests={store.requests}
+            paused={store.paused}
+            captureEnabled={store.state.enabled}
+          />
           {store.paused.length > 0 && <HeldQueue store={store} />}
           <InterceptorRules
             rules={store.rules}
@@ -150,6 +155,85 @@ export function InterceptorPanel({ store, onNotice }: InterceptorPanelProps) {
         />
       )}
     </div>
+  )
+}
+
+interface TrafficSummaryProps {
+  requests: CapturedRequest[]
+  paused: PausedRequest[]
+  captureEnabled: boolean
+}
+
+/** At-a-glance health for the current capture buffer. */
+function TrafficSummary({ requests, paused, captureEnabled }: TrafficSummaryProps) {
+  const stats = useMemo(() => {
+    const completed = requests.filter((request) => request.durationMs !== null)
+    const failed = requests.filter(
+      (request) => request.error || (request.statusCode ?? 0) >= 400
+    )
+    const blocked = requests.filter((request) => request.blockedByRule)
+    const totalDuration = completed.reduce((total, request) => total + (request.durationMs ?? 0), 0)
+
+    return {
+      total: requests.length,
+      blocked: blocked.length,
+      failed: failed.length,
+      averageMs: completed.length === 0 ? null : Math.round(totalDuration / completed.length)
+    }
+  }, [requests])
+
+  const cells = [
+    { label: 'Requests', value: String(stats.total), tone: 'text-neutral-200' },
+    {
+      label: 'Blocked',
+      value: String(stats.blocked),
+      tone: stats.blocked > 0 ? 'text-rose-300' : 'text-neutral-200'
+    },
+    {
+      label: 'Errors',
+      value: String(stats.failed),
+      tone: stats.failed > 0 ? 'text-amber-300' : 'text-neutral-200'
+    },
+    {
+      label: 'Avg',
+      value: stats.averageMs === null ? '--' : `${stats.averageMs}ms`,
+      tone: 'text-neutral-200'
+    }
+  ]
+
+  return (
+    <section
+      aria-label="Traffic summary"
+      className="mx-3 mt-2 flex shrink-0 items-center gap-2 rounded-md border border-white/10 bg-neutral-950/70 px-2.5 py-1.5"
+    >
+      <span
+        className={[
+          'inline-flex h-1.5 w-1.5 shrink-0 rounded-full',
+          captureEnabled ? 'bg-teal-300 animate-pulse' : 'bg-neutral-600'
+        ].join(' ')}
+        aria-hidden="true"
+      />
+      <span className="text-[10px] uppercase tracking-wide text-neutral-500">
+        {captureEnabled ? 'Live' : 'Paused'}
+      </span>
+
+      <div className="ml-1 grid min-w-0 flex-1 grid-cols-4 gap-2">
+        {cells.map((cell) => (
+          <div key={cell.label} className="min-w-0">
+            <p className="truncate text-[9px] uppercase tracking-wide text-neutral-600">
+              {cell.label}
+            </p>
+            <p className={`truncate font-mono text-[11px] ${cell.tone}`}>{cell.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {paused.length > 0 && (
+        <span className="shrink-0 rounded bg-amber-400/15 px-1.5 py-0.5 font-mono text-[9px] text-amber-200">
+          {paused.length} held
+        </span>
+      )}
+    </section>
   )
 }
 

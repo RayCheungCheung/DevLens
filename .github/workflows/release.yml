@@ -1,0 +1,81 @@
+name: release
+
+# Push a `v*` tag to publish installers for every platform to GitHub Releases.
+# Each runner only builds the targets that match its own OS (macOS cannot be built
+# from Linux or Windows), so the matrix is keyed to the OS. Every job publishes
+# its own binaries to the shared GitHub Release via electron-builder's publisher.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write        # create the release and upload assets
+  pull-requests: write   # PR builds (if ever wired) get a comment instead
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows: NSIS installer + portable zip, x64 and arm64.
+          - os: windows-latest
+            platform: win
+            archs: x64,arm64
+            targets: nsis,zip
+          # macOS: DMG + zip, Intel and Apple Silicon.
+          - os: macos-latest
+            platform: mac
+            archs: x64,arm64
+            targets: dmg,zip
+          # Linux: AppImage + deb + rpm, x64 and arm64.
+          - os: ubuntu-latest
+            platform: linux
+            archs: x64,arm64
+            targets: AppImage,deb,rpm
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build app bundle
+        run: npm run build
+
+      - name: Package and publish to GitHub Release
+        # `--publish github` reads the tag from GITHUB_SHA and appends this platform's
+        # artifacts to the same release that the other jobs create. The update manifest
+        # (latest.yml / latest-mac.yml) is generated here too.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # arm64 Linux on an ubuntu x64 runner: build arm64 in a qemu container is not
+          # available by default, so the linux job builds the host arch and lets the
+          # electron-builder cross-arch targets fall back gracefully on the host arch.
+        run: |
+          npx electron-builder --${{ matrix.platform }} \
+            ${{ matrix.targets }} \
+            --arch ${{ replace(matrix.archs, ',', ' --arch ') }} \
+            --publish github
+
+      - name: Upload build artifacts (backup, in case release upload fails)
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: dist-${{ matrix.os }}-${{ matrix.archs }}
+          path: dist/*
+          include-hidden-files: true
+          retention-days: 14

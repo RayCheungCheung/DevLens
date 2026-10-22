@@ -115,6 +115,7 @@ export function AiAssistantPanel({
   const partition = aiPartition(profileId, site.id)
   const guestRef = useRef<DevLensWebviewElement | null>(null)
   const [injecting, setInjecting] = useState(false)
+  const googleSignInBlocked = site.id === 'gemini'
 
   const prompt = useMemo(
     () => buildSummarisePrompt({ url: activeUrl, title: activeTitle, chips }),
@@ -134,11 +135,11 @@ export function AiAssistantPanel({
   const openSignInWindow = useCallback(async () => {
     const result = await window.devlens
       .aiOpenSignInWindow({ provider: site.id, partition })
-      .catch(() => ({ ok: false, error: 'Could not open the sign-in window.' }))
+      .catch(() => ({ ok: false, error: 'Could not open the system browser.' }))
     onNotice(
       result.ok
-        ? `sign-in window opened for ${site.label} - finish there, then reload this panel`
-        : result.error ?? 'Could not open the sign-in window.'
+        ? `${site.label} opened in your system browser - embedded Google sessions cannot be copied back into DevLens`
+        : result.error ?? 'Could not open the system browser.'
     )
   }, [onNotice, partition, site.id, site.label])
 
@@ -198,9 +199,11 @@ export function AiAssistantPanel({
           type="button"
           data-testid="ai-summarise"
           onClick={() => void summarise()}
-          disabled={injecting || !activeUrl}
+          disabled={injecting || !activeUrl || googleSignInBlocked}
           title={
-            activeUrl
+            googleSignInBlocked
+              ? 'Gemini is available in the system browser because Google blocks embedded sign-in'
+              : activeUrl
               ? `Copy a prompt about ${activeUrl} and type it into ${site.label}`
               : 'open a page to summarise'
           }
@@ -223,16 +226,48 @@ export function AiAssistantPanel({
 
       {/* ---------------- the site, and nothing else ---------------- */}
       <div className="relative min-h-0 flex-1">
-        <webview
-          key={`${site.id}-${partition}`}
-          ref={guestRef}
-          data-testid="ai-webview"
-          data-site={site.id}
-          partition={partition}
-          src={site.url}
-          title={`${site.label} in DevLens`}
-          className="absolute inset-0 h-full w-full"
-        />
+        {googleSignInBlocked ? (
+          <div
+            role="status"
+            data-testid="gemini-external-only"
+            className="absolute inset-0 flex items-center justify-center p-5"
+          >
+            <div className="max-w-[320px] rounded-xl border border-[var(--devlens-hairline-strong)] bg-[color-mix(in_srgb,var(--color-ink-950)_94%,transparent)] p-5 text-center shadow-xl">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10 text-amber-200">
+                <LogIn size={17} />
+              </span>
+              <h3 className="mt-3 text-[13px] font-medium text-ink-100">
+                Gemini needs your system browser
+              </h3>
+              <p className="mt-2 text-[10px] leading-5 text-ink-400">
+                Google blocks account sign-in inside Chromium-based embedded apps. DevLens will
+                not disguise the browser to bypass that security check.
+              </p>
+              <button
+                type="button"
+                onClick={() => void openSignInWindow()}
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--devlens-accent-line)] bg-[var(--devlens-accent-soft)] px-3 text-[10px] text-[var(--devlens-accent)] hover:bg-[var(--devlens-accent)] hover:text-ink-950"
+              >
+                <ExternalLink size={11} />
+                Open Gemini in browser
+              </button>
+              <p className="mt-3 font-mono text-[8px] leading-4 text-ink-600">
+                The browser session cannot be copied back into this isolated partition.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <webview
+            key={`${site.id}-${partition}`}
+            ref={guestRef}
+            data-testid="ai-webview"
+            data-site={site.id}
+            partition={partition}
+            src={site.url}
+            title={`${site.label} in DevLens`}
+            className="absolute inset-0 h-full w-full"
+          />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[var(--devlens-hairline)] px-2.5 py-2">
@@ -254,12 +289,12 @@ export function AiAssistantPanel({
           <button
             type="button"
             data-testid="ai-open-signin"
-            title="Google blocks OAuth inside embedded pages; sign in in a separate window and reload this panel"
+            title="Google blocks account sign-in inside embedded browsers; open this provider in the system browser"
             onClick={() => void openSignInWindow()}
             className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--devlens-hairline)] px-2.5 text-[10px] text-ink-400 transition-colors hover:border-[var(--devlens-accent-line)] hover:text-ink-100"
           >
             <LogIn size={10} />
-            Sign in separately
+            Open in browser
           </button>
         </div>
       </div>

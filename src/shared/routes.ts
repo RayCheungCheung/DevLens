@@ -18,6 +18,11 @@ export type InternalRouteId =
   | 'settings'
   | 'appearance-themes'
   | 'bookmarks'
+  | 'private-how'
+  | 'private-who'
+  | 'wimh-how'
+  | 'wimh-who'
+  | 'wimh-whatnhow'
   | 'changelog'
 
 /** Every addressable section of the settings centre. */
@@ -27,11 +32,13 @@ export const SETTINGS_CATEGORY_IDS = [
   'privacy',
   'appearance',
   'tabs',
+  'hotkeys',
   'developer',
   'identity',
   'languages',
   'downloads',
-  'about'
+  'about',
+  'team'
 ] as const
 
 export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number]
@@ -47,6 +54,12 @@ export const INTERNAL_ROUTES: Record<InternalRouteId, string> = {
   settings: 'devlens:settings/home',
   /** Saved bookmarks, as a full tab surface. */
   bookmarks: 'devlens:bookmarks',
+  /** Detailed private-session protection guides linked from private and WImH landing pages. */
+  'private-how': 'devlens:private/how',
+  'private-who': 'devlens:private/who',
+  'wimh-how': 'devlens:wimh/how',
+  'wimh-who': 'devlens:wimh/who',
+  'wimh-whatnhow': 'devlens:wimh/whatnhow',
   changelog: 'devlens:changelog'
 }
 
@@ -57,6 +70,11 @@ const ROUTE_LABELS: Record<InternalRouteId, string> = {
   history: 'History',
   settings: 'Settings',
   bookmarks: 'Bookmarks',
+  'private-how': 'How DevLens Protects Me',
+  'private-who': 'Who Can See My Activity',
+  'wimh-how': 'What Is WImH?',
+  'wimh-who': 'WImH Network Boundaries',
+  'wimh-whatnhow': 'What and How WImH Protects You',
   changelog: 'Release Notes & Changelog'
 }
 
@@ -139,5 +157,10 @@ export function isInternalUrl(url: string | null | undefined): boolean {
 export const OPENABLE_ROUTES: InternalRouteId[] = [
   'history',
   'settings',
-  'bookmarks'
+  'bookmarks',
+  'private-how',
+  'private-who',
+  'wimh-how',
+  'wimh-who',
+  'wimh-whatnhow'
 ]

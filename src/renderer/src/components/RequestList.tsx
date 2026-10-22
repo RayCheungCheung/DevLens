@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Ban, Copy, CornerDownRight, Search } from 'lucide-react'
+import { Ban, Copy, CornerDownRight, Search, Terminal } from 'lucide-react'
 import type { CapturedRequest } from '@shared/types'
 import { HeaderPairsEditor } from '@renderer/components/HeaderPairs'
 import { shortenUrl } from '@renderer/lib/url'
@@ -168,13 +168,16 @@ function RequestRow({
           <p className="break-all font-mono text-[10px] text-neutral-400">{request.url}</p>
           <p className="font-mono text-[10px] text-neutral-600">
             {request.durationMs !== null ? `${request.durationMs} ms` : 'pending'}
+            {request.mimeType && <span className="ml-2">{request.mimeType}</span>}
+            {request.fromCache && <span className="ml-2 text-sky-300">from cache</span>}
+            {request.remoteAddress && <span className="ml-2">{request.remoteAddress}</span>}
             {request.modifiedHeaders.length > 0 && (
               <span className="ml-2 text-amber-300">rules: {request.modifiedHeaders.join(', ')}</span>
             )}
             {request.error && <span className="ml-2 text-rose-300">{request.error}</span>}
           </p>
 
-          <HeaderPairsEditor headers={request.headers} onChange={() => undefined} readOnly emptyLabel="No request headers" />
+          <RequestHeaders request={request} />
 
           {request.bodyPreview && (
             <div>
@@ -226,4 +229,100 @@ function statusTone(statusCode: number | null, error: string | null): string {
   if (statusCode >= 400) return 'text-amber-300'
   if (statusCode >= 300) return 'text-sky-300'
   return 'text-neutral-400'
+}
+
+type HeaderTab = 'request' | 'response'
+
+interface RequestHeadersProps {
+  request: CapturedRequest
+}
+
+/** Compact header inspector with search, response capture awareness, and cURL hand-off. */
+function RequestHeaders({ request }: RequestHeadersProps) {
+  const [tab, setTab] = useState<HeaderTab>('request')
+  const [filter, setFilter] = useState('')
+  const responseHeaders = request.responseHeaders ?? []
+  const activeHeaders = tab === 'request' ? request.headers : responseHeaders
+  const needle = filter.trim().toLowerCase()
+  const visibleHeaders = needle
+    ? activeHeaders.filter(
+        (header) =>
+          header.name.toLowerCase().includes(needle) ||
+          header.value.toLowerCase().includes(needle)
+      )
+    : activeHeaders
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <div className="flex rounded-md border border-white/10 p-0.5">
+          {(['request', 'response'] as HeaderTab[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setTab(option)}
+              className={[
+                'rounded-[4px] px-1.5 py-0.5 text-[10px] capitalize transition-colors',
+                tab === option
+                  ? 'bg-white/10 text-neutral-100'
+                  : 'text-neutral-500 hover:text-neutral-300'
+              ].join(' ')}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex min-w-0 flex-1 items-center gap-1 rounded border border-white/10 bg-neutral-950/70 px-1.5 py-0.5 focus-within:border-teal-400/50">
+          <Search size={10} className="shrink-0 text-neutral-600" />
+          <input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Filter headers"
+            aria-label="Filter headers"
+            spellCheck={false}
+            className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-neutral-200 outline-none placeholder:text-neutral-600"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            void window.devlens.clipboardWrite(toCurl(request))
+          }}
+          title="Copy as cURL"
+          aria-label="Copy as cURL"
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded border border-white/10 px-1.5 text-[10px] text-neutral-300 transition-colors hover:bg-white/5"
+        >
+          <Terminal size={10} />
+          cURL
+        </button>
+      </div>
+
+      <HeaderPairsEditor
+        headers={visibleHeaders}
+        onChange={() => undefined}
+        readOnly
+        emptyLabel={
+          activeHeaders.length === 0
+            ? tab === 'request'
+              ? 'No request headers'
+              : 'No response metadata captured yet'
+            : 'No headers match this filter'
+        }
+      />
+    </div>
+  )
+}
+
+function toCurl(request: CapturedRequest): string {
+  const lines = [`curl -X ${request.method} '${request.url.replace(/'/g, `'\\''`)}'`]
+  for (const header of request.headers) {
+    if (!header.name) continue
+    lines.push(`  -H '${header.name}: ${header.value.replace(/'/g, `'\\''`)}'`)
+  }
+  if (request.bodyPreview) {
+    lines.push(`  --data-raw '${request.bodyPreview.replace(/'/g, `'\\''`)}'`)
+  }
+  return lines.join(' \\\n')
 }

@@ -137,6 +137,7 @@ export function isDeveloperShortcut(event: {
  * dev mode, which is where the capture exists in the first place.
  */
 export const DEV_ONLY_PANELS = [
+  'elements',
   'console',
   'interceptor',
   'recon',
@@ -168,6 +169,7 @@ export type DockToolId =
   | 'ai'
   | 'bookmarks'
   | 'history'
+  | 'elements'
   | 'console'
   | 'interceptor'
   | 'servers'
@@ -194,12 +196,13 @@ export const DOCK_TOOLS: readonly DockTool[] = [
   { id: 'history', label: 'History', modes: ['normal', 'dev'], slot: 'main' },
 
   /* Developer tools: the dock expands to these in dev mode. */
-  { id: 'console', label: 'Console & Network', modes: ['dev'], slot: 'main' },
-  { id: 'interceptor', label: 'Interceptor & Repeater', modes: ['dev'], slot: 'main' },
+  { id: 'elements', label: 'Elements', modes: ['dev'], slot: 'main' },
+  { id: 'console', label: 'Console', modes: ['dev'], slot: 'main' },
+  { id: 'interceptor', label: 'Network', modes: ['dev'], slot: 'main' },
   { id: 'servers', label: 'Local dev servers', modes: ['dev'], slot: 'main' },
   { id: 'viewport', label: 'Device viewport (RWD)', modes: ['dev'], slot: 'main' },
   { id: 'design', label: 'Live design & CSS', modes: ['dev'], slot: 'main' },
-  { id: 'storage', label: 'Cookies & storage', modes: ['dev'], slot: 'main' },
+  { id: 'storage', label: 'Application', modes: ['dev'], slot: 'main' },
   { id: 'recon', label: 'Recon & report', modes: ['dev'], slot: 'main' },
   { id: 'defense', label: 'Extreme defense mode', modes: ['dev'], slot: 'main' },
 

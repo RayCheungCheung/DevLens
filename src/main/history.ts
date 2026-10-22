@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { HistoryEntry } from '../shared/types'
+import { safeBookmarkUrl } from '../shared/bookmarks-file'
 import { activeProfileId } from './profiles'
 import { profileFile } from './storage'
 import { preferencesNow } from './preferences'
@@ -13,6 +14,7 @@ import { preferencesNow } from './preferences'
  */
 const STORAGE_CAP = 500
 const SAVE_DEBOUNCE_MS = 400
+const TITLE_CAP = 300
 
 let entries: HistoryEntry[] = []
 /** Which profile the in-memory list belongs to; a switch forces a re-read. */
@@ -46,7 +48,15 @@ function load(): void {
     const file = historyFile()
     if (!existsSync(file)) return
     const parsed = JSON.parse(readFileSync(file, 'utf-8')) as HistoryEntry[]
-    entries = Array.isArray(parsed) ? parsed.filter(isUsable).slice(0, STORAGE_CAP) : []
+    entries = Array.isArray(parsed)
+      ? parsed
+          .filter(isUsable)
+          .map((entry) => ({
+            ...entry,
+            title: String(entry.title ?? entry.url).slice(0, TITLE_CAP)
+          }))
+          .slice(0, STORAGE_CAP)
+      : []
   } catch (error) {
     console.warn('[devlens] could not read browsing history', error)
     entries = []
@@ -108,13 +118,13 @@ export function historyAdd(input: { url: string; title?: string; private?: boole
   if (existing) {
     existing.visitCount += 1
     existing.lastVisitedAt = Date.now()
-    if (input.title) existing.title = input.title
+    if (input.title) existing.title = input.title.trim().slice(0, TITLE_CAP) || existing.title
     entries = [existing, ...entries.filter((entry) => entry.url !== url)]
   } else {
     entries = [
       {
         url,
-        title: input.title?.trim() || url,
+        title: input.title?.trim().slice(0, TITLE_CAP) || url,
         visitCount: 1,
         lastVisitedAt: Date.now()
       },
@@ -171,19 +181,13 @@ export function historyKeepOrigins(origins: string[]): number {
 }
 
 function normalise(url: string): string | null {
-  const trimmed = url.trim()
-  if (!trimmed) return null
-  try {
-    const parsed = new URL(trimmed)
-    if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return null
-    // Fragments are noise in a suggestion list.
-    parsed.hash = ''
-    return parsed.toString()
-  } catch {
-    return null
-  }
+  return safeBookmarkUrl(url)
 }
 
 function isUsable(entry: HistoryEntry): boolean {
-  return typeof entry?.url === 'string' && typeof entry?.lastVisitedAt === 'number'
+  return (
+    typeof entry?.url === 'string' &&
+    typeof entry?.lastVisitedAt === 'number' &&
+    Boolean(safeBookmarkUrl(entry.url))
+  )
 }

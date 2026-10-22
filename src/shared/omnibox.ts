@@ -9,12 +9,14 @@
 import {
   defaultOmniboxEntries,
   entryUrl,
+  inferShortcutSearchTemplate,
   normalizeKeyword,
   type DefaultEngineRef,
   type OmniboxEntry,
   type OmniboxSources
 } from './omnibox-settings'
 import { internalRouteLabel, internalRouteOf, type InternalRouteId } from './routes'
+import { encodeUrlComponent } from './url-encode'
 
 export type SearchEngineId =
   | 'google'
@@ -53,28 +55,28 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     label: 'Google',
     token: 'g',
     aliases: ['google'],
-    build: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`
+    build: (query) => `https://www.google.com/search?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'brave',
     label: 'Brave',
     token: 'b',
     aliases: ['brave'],
-    build: (query) => `https://search.brave.com/search?q=${encodeURIComponent(query)}`
+    build: (query) => `https://search.brave.com/search?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'duckduckgo',
     label: 'DuckDuckGo',
     token: 'd',
     aliases: ['duckduckgo', 'ddg'],
-    build: (query) => `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
+    build: (query) => `https://duckduckgo.com/?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'bing',
     label: 'Bing',
     token: 'bi',
     aliases: ['bing'],
-    build: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`
+    build: (query) => `https://www.bing.com/search?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'wikipedia',
@@ -82,14 +84,14 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     token: 'w',
     aliases: ['wiki', 'wikipedia'],
     build: (query) =>
-      `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(query)}`
+      `https://en.wikipedia.org/wiki/Special:Search?search=${encodeUrlComponent(query)}`
   },
   {
     id: 'perplexity',
     label: 'Perplexity',
     token: 'p',
     aliases: ['perplexity'],
-    build: (query) => `https://www.perplexity.ai/search?q=${encodeURIComponent(query)}`
+    build: (query) => `https://www.perplexity.ai/search?q=${encodeUrlComponent(query)}`
   }
 ]
 
@@ -99,28 +101,28 @@ export const PLATFORM_HUBS: PlatformHub[] = [
     label: 'GitHub',
     token: 'g',
     aliases: ['github', 'gh'],
-    build: (query) => `https://github.com/search?q=${encodeURIComponent(query)}`
+    build: (query) => `https://github.com/search?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'reddit',
     label: 'Reddit',
     token: 'r',
     aliases: ['reddit'],
-    build: (query) => `https://www.reddit.com/search/?q=${encodeURIComponent(query)}`
+    build: (query) => `https://www.reddit.com/search/?q=${encodeUrlComponent(query)}`
   },
   {
     id: 'amazon',
     label: 'Amazon',
     token: 'amz',
     aliases: ['amazon', 'a'],
-    build: (query) => `https://www.amazon.com/s?k=${encodeURIComponent(query)}`
+    build: (query) => `https://www.amazon.com/s?k=${encodeUrlComponent(query)}`
   },
   {
     id: 'cve',
     label: 'CVE database',
     token: 'cve',
     aliases: ['cveorg'],
-    build: (query) => `https://www.cve.org/CVERecord/SearchResults?query=${encodeURIComponent(query)}`
+    build: (query) => `https://www.cve.org/CVERecord/SearchResults?query=${encodeUrlComponent(query)}`
   }
 ]
 
@@ -353,6 +355,27 @@ export function toSearchUrl(query: string, engine: SearchEngineId = DEFAULT_SEAR
 }
 
 /**
+ * True when Enter should turn a complete searchable shortcut into query-entry mode.
+ *
+ * `#yt` arms the shortcut once; `#yt ` is already armed, so its next Enter can open the site.
+ */
+export function shouldArmShortcutSearch(
+  value: string,
+  entries: OmniboxEntry[] = defaultOmniboxEntries()
+): boolean {
+  if (value !== value.trimEnd()) return false
+  const match = /^#([^\s]+)$/.exec(value)
+  if (!match) return false
+  const token = match[1].toLowerCase()
+  if (token === 'g') return true
+  const shortcut = entryByKeyword(token, entries, 'shortcut')
+  return Boolean(
+    shortcut &&
+      (shortcut.searchTemplate ?? inferShortcutSearchTemplate(shortcut.template))
+  )
+}
+
+/**
  * Parses one line of omnibox input.
  *
  * Returns null when the input is empty or a prefix is still incomplete (`@g` with no
@@ -452,13 +475,34 @@ function parseShortcutPrefix(
   const rest = (match[2] ?? '').trim()
   const shortcut = entryByKeyword(token, entries, 'shortcut')
   if (shortcut) {
+    const url = entryUrl(shortcut, rest)
     return {
       kind: 'entry',
-      url: shortcut.template,
+      url,
       entryId: shortcut.id,
       query: rest,
-      label: `Open ${shortcut.label}`
+      label: rest
+        ? `Search ${shortcut.label} for "${rest}"`
+        : `Open ${shortcut.label}`
     }
+  }
+
+  // `#g` is a compatibility alias for Google even on profiles created before a Google
+  // shortcut existed. An empty query opens the site; text searches Google directly.
+  if (token.toLowerCase() === 'g') {
+    return rest
+      ? {
+          kind: 'search',
+          url: engineById('google').build(rest),
+          engine: 'google',
+          query: rest,
+          label: `Search Google for "${rest}"`
+        }
+      : {
+          kind: 'navigate',
+          url: 'https://www.google.com/',
+          label: 'Open Google'
+        }
   }
 
   if (!token) return null
@@ -787,11 +831,23 @@ export function resolvePrefixBadge(value: string, entries: OmniboxEntry[] = []):
     if (prefix === '#') {
       const shortcut = entryByKeyword(lower, entries, 'shortcut')
       if (shortcut) {
+        const tail = value.slice(chars).trim()
+        const searchable = Boolean(
+          tail && (shortcut.searchTemplate ?? inferShortcutSearchTemplate(shortcut.template))
+        )
         return {
           token: value.slice(0, chars),
-          label: `Open ${shortcut.label}`,
+          label: searchable ? `Search ${shortcut.label}` : `Open ${shortcut.label}`,
           icon: 'custom',
           entryId: shortcut.id,
+          chars
+        }
+      }
+      if (lower === 'g') {
+        return {
+          token: value.slice(0, chars),
+          label: value.slice(chars).trim() ? 'Search Google' : 'Open Google',
+          icon: 'google',
           chars
         }
       }
@@ -1309,7 +1365,9 @@ function prefixHints(
       add(
         entry.keyword,
         entry.label,
-        `#${entry.keyword} - open ${entry.template}`,
+        (entry.searchTemplate ?? inferShortcutSearchTemplate(entry.template))
+          ? `#${entry.keyword} - open, or type a query to search this site`
+          : `#${entry.keyword} - open ${entry.template}`,
         'globe',
         false,
         { entryId: entry.id }

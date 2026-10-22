@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, Plus } from 'lucide-react'
+import { Globe, Plus, Star } from 'lucide-react'
 import { iconFor, useFavicons } from '@renderer/components/dashboard/useFavicons'
 
 export interface Shortcut {
@@ -28,13 +28,13 @@ function TileIcon({ icon, host }: { icon: string | undefined | null; host: strin
         aria-hidden="true"
         draggable={false}
         onError={() => setBroken(true)}
-        className="h-6 w-6 shrink-0 rounded object-contain"
+        className="h-8 w-8 shrink-0 object-contain"
       />
     )
   }
   return (
-    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-white/[0.06] font-mono text-[12px] text-ink-300 uppercase">
-      {host.replace(/^www\./, '').slice(0, 1) || <Globe size={13} />}
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center font-mono text-[16px] text-white/75 uppercase">
+      {host.replace(/^www\./, '').slice(0, 1) || <Globe size={15} />}
     </span>
   )
 }
@@ -45,6 +45,13 @@ function hostOfTile(url: string): string {
   } catch {
     return url
   }
+}
+
+function shortcutLabel(entry: Shortcut): string {
+  const host = hostOfTile(entry.url).replace(/^www\./, '')
+  const title = entry.title.trim()
+  if (!title || title === host || /^https?:\/\//i.test(title)) return host || 'Open'
+  return title
 }
 
 /**
@@ -60,7 +67,7 @@ export function QuickLaunch({ shortcuts, onOpenUrl, onFocusField }: QuickLaunchP
   return (
     <div
       data-testid="quick-launch"
-      className="grid grid-cols-3 gap-2 @xl:grid-cols-4 @4xl:grid-cols-6"
+      className="flex flex-wrap items-start justify-center gap-x-5 gap-y-5"
     >
       {shortcuts.map((entry) => (
         <button
@@ -76,13 +83,23 @@ export function QuickLaunch({ shortcuts, onOpenUrl, onFocusField }: QuickLaunchP
             if (event.button === 1) onOpenUrl(entry.url, { newTab: true })
           }}
           className={[
-            'nova-card nova-card--interactive flex h-[84px] min-w-0 flex-col items-center justify-center gap-2 px-2',
-            entry.saved ? 'ring-1 ring-[var(--devlens-accent-line)] ring-inset' : ''
+            'group flex w-[96px] min-w-0 flex-col items-center gap-2 rounded-lg px-1 py-1 text-center outline-none focus-visible:ring-2 focus-visible:ring-white/20'
           ].join(' ')}
         >
-          <TileIcon icon={iconFor(icons, entry.url)} host={hostOfTile(entry.url)} />
-          <span className="w-full truncate text-center text-[10px] text-ink-300">
-            {entry.title || hostOfTile(entry.url)}
+          <span
+            className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] border border-white/[0.09] bg-[rgba(9,12,15,0.56)] shadow-[0_1px_0_rgba(255,255,255,0.035)_inset] backdrop-blur-md transition-colors duration-150 group-hover:border-white/20 group-hover:bg-[rgba(18,22,26,0.76)]"
+          >
+            <TileIcon icon={iconFor(icons, entry.url)} host={hostOfTile(entry.url)} />
+            {entry.saved && (
+              <Star
+                size={8}
+                aria-label="Saved"
+                className="absolute right-1.5 top-1.5 text-white/45"
+              />
+            )}
+          </span>
+          <span className="w-full truncate text-[10px] leading-4 text-white/65 drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)] transition-colors group-hover:text-white/90">
+            {shortcutLabel(entry)}
           </span>
         </button>
       ))}
@@ -93,12 +110,12 @@ export function QuickLaunch({ shortcuts, onOpenUrl, onFocusField }: QuickLaunchP
         data-testid="shortcut-new"
         title="Type an address in the field above"
         onClick={onFocusField}
-        className="flex h-[84px] min-w-0 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--devlens-hairline)] px-2 text-ink-500 transition-colors hover:border-[var(--devlens-accent-line)] hover:text-ink-200"
+        className="group flex w-[96px] min-w-0 flex-col items-center gap-2 rounded-lg px-1 py-1 text-white/40 transition-colors hover:text-white/75"
       >
-        <span className="flex h-6 w-6 items-center justify-center">
-          <Plus size={14} />
+        <span className="flex h-14 w-14 items-center justify-center rounded-[16px] border border-dashed border-white/15 bg-black/15 transition-colors group-hover:border-white/30 group-hover:bg-black/25">
+          <Plus size={18} />
         </span>
-        <span className="w-full truncate text-center text-[10px]">Add</span>
+        <span className="w-full truncate text-center text-[10px] leading-4">Add</span>
       </button>
     </div>
   )

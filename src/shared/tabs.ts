@@ -16,6 +16,13 @@ export interface DeveloperHotkey {
   shortcut: string
 }
 
+export interface TabGroup {
+  id: string
+  name: string
+  color: string
+  collapsed: boolean
+}
+
 export interface TabsPreferences {
   layout: TabLayoutMode
   switchToNewTabs: boolean
@@ -23,6 +30,7 @@ export interface TabsPreferences {
   mruSwitching: boolean
   hoverPreview: boolean
   tabGroups: boolean
+  groups: TabGroup[]
   taskbarPreviews: boolean
   containersEnabled: boolean
   containers: DevContainer[]
@@ -42,6 +50,7 @@ export const DEFAULT_TABS_PREFERENCES: TabsPreferences = {
   mruSwitching: false,
   hoverPreview: true,
   tabGroups: true,
+  groups: [],
   taskbarPreviews: true,
   containersEnabled: false,
   containers: [

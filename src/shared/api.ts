@@ -12,9 +12,13 @@ import type {
   BookmarkSnapshot,
   BookmarkDropPosition,
   BrowserProfile,
+  BrowserProfilePatch,
   ClipboardVerdict,
+  ThreatState,
+  ThreatAlert,
   ConsoleLogEntry,
   CookieRecord,
+  FaviconUpdatedEvent,
   GhostSessionState,
   GuestRegistration,
   GuestStatusEvent,
@@ -29,6 +33,7 @@ import type {
   OpenInIdeResult,
   PageCommandKind,
   PageCaptureRequest,
+  PermissionEntry,
   ProfileAvatar,
   ProfileSettings,
   ProtectionState,
@@ -38,6 +43,11 @@ import type {
   RemoteImageResult,
   GuestInspectRequest,
   GuestInspectResult,
+  GuestDebuggerEvent,
+  GuestDebuggerRequest,
+  GuestDebuggerResult,
+  GoogleOAuthStartResult,
+  GoogleOAuthStatus,
   RequestEvent,
   ResumeRequestPayload,
   SaveTextRequest,
@@ -64,6 +74,7 @@ import type {
 import type { AppIconStyle, ContentThemeMode } from './appearance'
 import type { LanguagePreferences } from './languages'
 import type { IdeOption } from './ide'
+import type { HotkeyActionId } from './hotkeys'
 
 export type Unsubscribe = () => void
 
@@ -77,11 +88,14 @@ export interface DevLensApi {
   registerGuest(registration: GuestRegistration): void
   /** Closes the window: Ctrl/Cmd+W with a single tab left. */
   windowClose(): void
+  /** Opens DevTools for the DevLens shell renderer, not the active website guest. */
+  shellDevToolsOpen(): Promise<boolean>
   openInIde(request: OpenInIdeRequest): Promise<OpenInIdeResult>
   ideList(): Promise<IdeOption[]>
   onConsoleLog(listener: (entry: ConsoleLogEntry) => void): Unsubscribe
   onNetworkEntry(listener: (entry: NetworkEntry) => void): Unsubscribe
   onGuestStatus(listener: (event: GuestStatusEvent) => void): Unsubscribe
+  onFaviconUpdated(listener: (event: FaviconUpdatedEvent) => void): Unsubscribe
 
   /* AI debugger */
   aiProviderInfo(): Promise<AiProviderInfo>
@@ -90,6 +104,12 @@ export interface DevLensApi {
   onAiStream(listener: (event: AiStreamEvent) => void): Unsubscribe
   /** Opens a top-level provider sign-in window sharing the AI panel's partition. */
   aiOpenSignInWindow(request: AiSignInWindowRequest): Promise<AiSignInWindowResult>
+
+  /* Google OAuth */
+  googleAuthStatus(): Promise<GoogleOAuthStatus>
+  googleAuthStart(): Promise<GoogleOAuthStartResult>
+  googleAuthLogout(): Promise<GoogleOAuthStatus>
+  onGoogleAuthChanged(listener: (status: GoogleOAuthStatus) => void): Unsubscribe
 
   /* Interceptor and repeater */
   interceptorState(): Promise<InterceptorSnapshot>
@@ -119,6 +139,10 @@ export interface DevLensApi {
   pageCommand(input: { webContentsId: number; command: PageCommandKind }): Promise<boolean>
   /** Opens DevTools at a guest point, or returns accessible role/name facts for that point. */
   guestInspect(input: GuestInspectRequest): Promise<GuestInspectResult>
+  /** The embedded DevTools transport. Commands are allow-listed in main. */
+  guestDebuggerSend(input: GuestDebuggerRequest): Promise<GuestDebuggerResult>
+  guestDebuggerDetach(webContentsId: number): Promise<boolean>
+  onGuestDebuggerEvent(listener: (events: GuestDebuggerEvent[]) => void): Unsubscribe
   /** Downloads a link or image target and writes it through the native Save dialog. */
   remoteFileSave(request: RemoteFileRequest): Promise<SaveTextResult>
   /** Fetches an image target and returns it as a data URI for clipboard use. */
@@ -140,6 +164,8 @@ export interface DevLensApi {
     listener: (request: { webContentsId: number }) => void
   ): Unsubscribe
   onReloadViewportsRequested(listener: () => void): Unsubscribe
+  /** Main caught a configurable hotkey while focus was inside a guest page. */
+  onHotkeyTriggered(listener: (action: HotkeyActionId) => void): Unsubscribe
 
   /* Omnibox */
   historyList(limit?: number): Promise<HistoryEntry[]>
@@ -284,6 +310,8 @@ export interface DevLensApi {
     profile?: SessionProfileId,
     partition?: string
   ): Promise<{ ok: boolean; cleared: string[] }>
+  /** Clears HTTP cache only; cookies, storage and auth stay in place. */
+  sessionClearCache(partition?: string): Promise<{ ok: boolean; error: string | null }>
   /** Forgets one site: cookies and storage for that origin only. */
   sessionClearSite(
     url: string,
@@ -293,6 +321,9 @@ export interface DevLensApi {
   cookiesList(input: { url: string; partition?: string }): Promise<CookieRecord[]>
   /** Forgets one cookie by name. */
   cookiesRemove(input: { url: string; name: string; partition?: string }): Promise<boolean>
+  /** Browser permissions for one origin, e.g. camera, microphone, notifications. */
+  permissionsQuery(url: string): Promise<PermissionEntry[]>
+  
   /** The site's own icon, fetched in the main process and returned as a data URL. */
   faviconGet(pageUrl: string): Promise<{ dataUrl: string | null; source: string | null }>
   /**
@@ -318,6 +349,16 @@ export interface DevLensApi {
   wimhCheckClipboard(text: string): Promise<ClipboardVerdict>
   wimhNotePasteBlocked(reason: string): Promise<WimhState>
   onWimhChanged(listener: (state: WimhState) => void): Unsubscribe
+
+  /* Threat detection (extreme protection) */
+  /** Current threat state, including any active alert that triggered the shield. */
+  threatState(): Promise<ThreatState>
+  /** The renderer tells main the operator dismissed the protective shield. */
+  threatDismiss(): void
+  /** Main pushes a threat alert to the renderer; the shield activates on the next frame. */
+  onThreatAlert(listener: (alert: ThreatAlert) => void): Unsubscribe
+  /** Main pushes updated threat state (e.g. after dismissal clears the shield). */
+  onThreatChanged(listener: (state: ThreatState) => void): Unsubscribe
 
   /* On-demand inspection lease (WImH overlay) */
   inspectionState(): Promise<InspectionState>
@@ -345,10 +386,17 @@ export interface DevLensApi {
   onModeChanged(listener: (state: ModeState) => void): Unsubscribe
   profilesList(): Promise<BrowserProfile[]>
   profilesCreate(name: string | { name: string; avatar?: ProfileAvatar }): Promise<BrowserProfile[]>
+  profilesUpdate(id: string, patch: BrowserProfilePatch): Promise<BrowserProfile[]>
   profilesSwitch(id: string): Promise<BrowserProfile[]>
   profilesDelete(id: string): Promise<BrowserProfile[]>
   onProfilesChanged(listener: (profiles: BrowserProfile[]) => void): Unsubscribe
   /** Identity settings, currently the startup prompt. */
   profilesSettings(): Promise<ProfileSettings>
   profilesSetAskOnStartup(ask: boolean): Promise<ProfileSettings>
+  /** Preferences for one profile; editing a non-active profile never switches identity. */
+  profilePreferencesGet(id: string): Promise<ProfilePreferences>
+  profilePreferencesSet(id: string, patch: ProfilePreferencesPatch): Promise<ProfilePreferences>
+  /** Main -> renderer: the workspace partition changed (workspace activated/deactivated). */
+  onWorkspacePartitionChanged(listener: (partition: string | null) => void): Unsubscribe
 }
+

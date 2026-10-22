@@ -196,9 +196,12 @@ export function BookmarksBar({
               {...shared}
               {...dropHandlers(node)}
               onContextMenu={(event) => openMenu(event, { kind: 'separator', node })}
-              className={[shared.className, 'mx-1 flex h-6 w-2 cursor-grab items-center justify-center'].join(' ')}
+              className={[
+                shared.className,
+                'bookmark-separator-target mx-1.5 flex h-7 w-3.5 cursor-grab items-center justify-center'
+              ].join(' ')}
             >
-              <span className="h-4 w-px bg-[var(--devlens-hairline-strong)]" />
+              <span className="bookmark-separator-mark" />
             </div>
           )
         }
@@ -490,7 +493,7 @@ function FolderEntries({
       {nodes.map((child) => {
         if (child.kind === 'separator') {
           return (
-            <li key={child.id} aria-hidden="true" className="mx-3 my-1 h-px bg-[var(--devlens-hairline)]" />
+            <li key={child.id} aria-hidden="true" className="bookmark-separator-menu" />
           )
         }
         if (child.kind === 'folder') {

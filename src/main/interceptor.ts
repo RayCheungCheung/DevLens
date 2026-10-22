@@ -27,6 +27,7 @@ import { SENSITIVE_HEADERS, classifyClipboardText, redactUrlSecrets } from '../s
 import { isWimhActive, noteRedactedField, registerSecret } from './wimh'
 import { areRulesEnabled, clearLeaseCounters, isMonitoringEnabled, noteLeaseRequest } from './mode'
 import { notePrivateBlocked, notePrivateHeaders } from './private-tabs'
+import { desktopChromeUserAgent } from './user-agent'
 import type { ProtectionPolicy } from '../shared/protection'
 
 /**
@@ -49,6 +50,9 @@ const FLUSH_INTERVAL_MS = 150
 const MAX_BATCH = 60
 const REPEATER_TIMEOUT_MS = 30000
 const REPEATER_MAX_BODY = 200_000
+const REPEATER_MAX_REQUEST_BODY = 2_000_000
+const REPEATER_MAX_URL = 8192
+const REPEATER_MAX_HEADERS = 200
 
 /** Headers a fetch() implementation must own; forwarding them breaks the request. */
 const MANAGED_HEADERS = new Set([
@@ -225,6 +229,7 @@ export function instrumentInterceptor(
 
   ses.webRequest.onBeforeSendHeaders(REQUEST_FILTER, (details, callback) => {
     try {
+      applyIdentityProviderUserAgent(details)
       handleBeforeSendHeaders(details, callback, options)
     } catch (error) {
       console.error('[devlens] interceptor beforeSendHeaders failed', error)
@@ -232,10 +237,31 @@ export function instrumentInterceptor(
     }
   })
 
+
+  ses.webRequest.onHeadersReceived(REQUEST_FILTER, (details, callback) => {
+
+    try {
+      const record = records.get(String(details.id))
+      if (record) {
+        const headers = toPairs(details.responseHeaders ?? {})
+        record.responseHeaders = headers
+        record.mimeType =
+          headers
+            .find((header) => header.name.toLowerCase() === 'content-type')
+            ?.value.split(';')[0]
+            ?.trim() || null
+        queue({ type: 'update', request: record })
+      }
+    } catch (error) {
+      console.error('[devlens] interceptor headersReceived failed', error)
+    }
+    callback({})
+  })
+
   ses.webRequest.onCompleted(REQUEST_FILTER, (details) => {
     try {
       const record = records.get(String(details.id))
-      if (record) finish(record, details.statusCode, null)
+      if (record) finish(record, details.statusCode, null, details)
     } catch (error) {
       console.error('[devlens] interceptor completed failed', error)
     }
@@ -289,9 +315,13 @@ function handleBeforeRequest(
     modifiedHeaders: [],
     paused: false,
     headers: [],
+    responseHeaders: [],
     bodyPreview: extreme ? redactBodyPreview(id, body.preview) : body.preview,
     bodyTruncated: body.truncated,
-    hasBody: body.has
+    hasBody: body.has,
+    mimeType: null,
+    fromCache: false,
+    remoteAddress: null
   }
 
   // Normal mode does not watch: no record, no rules, the request goes out as the page sent
@@ -429,6 +459,35 @@ function handleBeforeSendHeaders(
 
   queue({ type: 'start', request: record })
   callback({ requestHeaders: toHeaderRecord(headers) })
+}
+
+/**
+ * Force the desktop Chrome UA on every request that reaches an identity provider.
+ *
+ * Electron's `webRequest` allows a single listener per event, so this is folded into the session's
+ * `onBeforeSendHeaders` rather than a second registration: when the URL is a provider host and the
+ * incoming UA still admits to being an Electron build, the header is replaced before the normal
+ * pipeline runs, so the provider never sees the `Electron` token that triggers its "Couldn't sign
+ * you in" refusal. A request that already carries a clean UA is left untouched.
+ */
+function applyIdentityProviderUserAgent(
+  details: Electron.OnBeforeSendHeadersListenerDetails
+): void {
+  let host = ''
+  try {
+    host = new URL(details.url).hostname
+  } catch {
+    return
+  }
+  const isIdentityProvider =
+    host === 'accounts.google.com' ||
+    (host.endsWith('.google.com') && host !== 'google.com') ||
+    host.endsWith('.googleusercontent.com')
+  if (!isIdentityProvider) return
+
+  const incoming = details.requestHeaders['User-Agent'] ?? details.requestHeaders['user-agent']
+  if (incoming !== undefined && !/\bElectron\b/i.test(String(incoming))) return
+  details.requestHeaders['User-Agent'] = desktopChromeUserAgent()
 }
 
 /** The document a request is being made from, used only to decide what counts as cross-site. */
@@ -589,14 +648,17 @@ export function matchesPattern(pattern: string, url: string): boolean {
 function sanitiseRule(rule: InterceptorRule): InterceptorRule {
   const headerKind = rule.kind === 'set-header' || rule.kind === 'remove-header'
   return {
-    id: rule.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id:
+      typeof rule.id === 'string' && rule.id
+        ? rule.id.slice(0, 100)
+        : `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     kind: rule.kind,
-    pattern: rule.pattern ?? '',
+    pattern: String(rule.pattern ?? '').slice(0, 2000),
     enabled: rule.enabled !== false,
-    header: headerKind ? rule.header : undefined,
-    value: rule.kind === 'set-header' ? rule.value : undefined,
-    target: rule.kind === 'redirect' ? (rule.target ?? '') : undefined,
-    note: rule.note,
+    header: headerKind ? String(rule.header ?? '').slice(0, 200) : undefined,
+    value: rule.kind === 'set-header' ? String(rule.value ?? '').slice(0, 8192) : undefined,
+    target: rule.kind === 'redirect' ? String(rule.target ?? '').slice(0, REPEATER_MAX_URL) : undefined,
+    note: typeof rule.note === 'string' ? rule.note.slice(0, 500) : rule.note,
     hits: rule.hits ?? 0
   }
 }
@@ -611,6 +673,10 @@ export async function sendRepeater(request: RepeaterRequest): Promise<RepeaterRe
   const timer = setTimeout(() => controller.abort(), REPEATER_TIMEOUT_MS)
 
   try {
+    if (request.url.length > REPEATER_MAX_URL) throw new Error('The request URL is too long.')
+    if (request.body.length > REPEATER_MAX_REQUEST_BODY) {
+      throw new Error('The repeater body is larger than 2 MB.')
+    }
     const url = new URL(request.url)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       throw new Error(`Unsupported protocol: ${url.protocol}`)
@@ -633,8 +699,7 @@ export async function sendRepeater(request: RepeaterRequest): Promise<RepeaterRe
       redirect: 'follow'
     })
 
-    const text = await response.text()
-    const truncated = text.length > REPEATER_MAX_BODY
+    const { text, truncated } = await readTextLimited(response, REPEATER_MAX_BODY)
     return {
       ok: true,
       status: response.status,
@@ -642,7 +707,7 @@ export async function sendRepeater(request: RepeaterRequest): Promise<RepeaterRe
       url: response.url,
       durationMs: Date.now() - started,
       headers: [...response.headers.entries()].map(([name, value]) => ({ name, value })),
-      body: truncated ? text.slice(0, REPEATER_MAX_BODY) : text,
+      body: text,
       truncated,
       error: null
     }
@@ -676,10 +741,26 @@ function remember(record: CapturedRequest): void {
   }
 }
 
-function finish(record: CapturedRequest, statusCode: number | null, error: string | null): void {
+function finish(
+  record: CapturedRequest,
+  statusCode: number | null,
+  error: string | null,
+  details?: Electron.OnCompletedListenerDetails
+): void {
   record.statusCode = statusCode
   record.error = error
   record.durationMs = Date.now() - record.startedAt
+  if (details) {
+    if (details.responseHeaders) {
+      record.responseHeaders = toPairs(details.responseHeaders)
+      record.mimeType =
+        record.responseHeaders
+          .find((header) => header.name.toLowerCase() === 'content-type')
+          ?.value.split(';')[0]
+          ?.trim() || null
+    }
+    record.fromCache = details.fromCache === true
+  }
   records.delete(record.id)
 
   queue({ type: 'update', request: record })
@@ -797,8 +878,43 @@ function toHeaderRecord(headers: HeaderPair[]): Record<string, string> {
 
 function cleanHeaders(headers: HeaderPair[]): HeaderPair[] {
   return headers
-    .map((pair) => ({ name: pair.name.trim(), value: pair.value }))
+    .slice(0, REPEATER_MAX_HEADERS)
+    .map((pair) => ({
+      name: String(pair?.name ?? '').trim().slice(0, 200),
+      value: String(pair?.value ?? '').slice(0, 8192)
+    }))
     .filter((pair) => pair.name.length > 0)
+}
+
+async function readTextLimited(
+  response: Response,
+  maxBytes: number
+): Promise<{ text: string; truncated: boolean }> {
+  const reader = response.body?.getReader()
+  if (!reader) return { text: '', truncated: false }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let truncated = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      const remaining = maxBytes - total
+      if (value.byteLength > remaining) {
+        if (remaining > 0) chunks.push(value.subarray(0, remaining))
+        truncated = true
+        await reader.cancel().catch(() => undefined)
+        break
+      }
+      chunks.push(value)
+      total += value.byteLength
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+  return { text: new TextDecoder().decode(bytes), truncated }
 }
 
 function upsertHeader(headers: HeaderPair[], name: string, value: string): HeaderPair[] {

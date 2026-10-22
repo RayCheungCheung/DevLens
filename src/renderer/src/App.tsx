@@ -59,12 +59,16 @@ import {
   type TabsPreferences
 } from '@shared/tabs'
 import {
+  DEFAULT_HOTKEY_PREFERENCES,
+  findHotkeyAction,
+  type HotkeyActionId
+} from '@shared/hotkeys'
+import {
   DEFAULT_LANGUAGE_PREFERENCES,
   type LanguagePreferences
 } from '@shared/languages'
 import {
   capabilitiesFor,
-  isDefenseShortcut,
   isDeveloperShortcut,
       isDevMode,
   isNormalMode,
@@ -144,7 +148,7 @@ import type {
   BookmarkMenuTarget
 } from '@renderer/components/BookmarksMenu'
 import { DefenseOverlay } from '@renderer/components/DefenseOverlay'
-import type { CookieRecord, StorageArea } from '@renderer/components/StoragePanel'
+import type { CacheArea, CookieRecord, StorageArea } from '@renderer/components/StoragePanel'
 import type { DesignTarget } from '@renderer/components/DesignPanel'
 import {
   ViewportFrame,
@@ -235,6 +239,21 @@ const TRACKING_PARAMETERS = [
   's_cid'
 ]
 
+
+/** Split View suggestion: how many alternate tab switches before we offer the side-by-side layout. */
+const SPLIT_SWITCH_THRESHOLD = 3
+/** Split View suggestion: cooldown in ms before the same pair is suggested again. */
+const SPLIT_SUGGEST_COOLDOWN_MS = 600_000
+
+function splitPairKey(first: string, second: string): string {
+  return [first, second].sort().join("|")
+}
+
+function isSplitCooldowned(map: Map<string, number>, pairId: string, maxAge: number): boolean {
+  const stamped = map.get(pairId)
+  if (stamped === undefined) return false
+  return Date.now() - stamped < maxAge
+}
 function cleanTrackingUrl(value: string): string {
   try {
     const url = new URL(value)
@@ -337,7 +356,11 @@ export function App() {
   const [activeView, setActiveView] = useState<ViewportId>('mobile')
   const [syncEnabled, setSyncEnabled] = useState(true)
   /** The dock stays; its panel column starts closed so launch does not open developer tools. */
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState<'hidden' | 'dock' | 'open'>('hidden')
+  /** The dock's panel calls speak in booleans; `hidden` means the whole sidebar is collapsed. */
+  const setSidebarPanelOpen = useCallback((open: boolean) => {
+    setSidebarOpen((current) => (!open ? (current === 'open' ? 'dock' : current) : 'open'))
+  }, [])
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [activePanel, setActivePanel] = useState<SidebarPanel>('console')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -417,6 +440,18 @@ export function App() {
   /** Tab ids that have an unread notification (title or URL changed while backgrounded). */
   const [notifiedTabIds, setNotifiedTabIds] = useState<Set<string>>(new Set())
   /** Tabs already asked about, so a site without an icon is not asked for again. */
+  /** Split View: the tab pair currently shown side-by-side, or null when single. */
+  const [splitView, setSplitView] = useState<{
+    first: string
+    second: string
+    layout?: 'row' | 'column'
+  } | null>(null)
+  /** Split View: the suggestion pill that pops from the toolbar after alternate tab switches. */
+  const [splitSuggestion, setSplitSuggestion] = useState<{ firstTitle: string; secondTitle: string } | null>(null)
+  /** Pairs the operator already acted on or dismissed, with a cooldown timestamp. */
+  const dismissedSplitPairs = useRef<Map<string, number>>(new Map())
+  /** Rolling window of recent tab ids, used to detect alternate switching. */
+  const tabSwitchHistory = useRef<string[]>([])
   const iconRequests = useRef(new Set<string>())
   /**
    * A mirror of the resolved icons for the effects below to read.
@@ -652,6 +687,7 @@ export function App() {
   const [profiles, setProfiles] = useState<BrowserProfile[]>([])
   const [profilesBusy, setProfilesBusy] = useState(false)
   const [profilePartition, setProfilePartition] = useState('')
+  const [workspacePartition, setWorkspacePartition] = useState<string | null>(null)
   /**
    * Identity. `profileId` is main-process truth; the gate is shown while the shell waits for a
    * choice, and the tab sets are filed per identity so two profiles never share a tab strip.
@@ -675,6 +711,7 @@ export function App() {
    */
   const [cookies, setCookies] = useState<CookieRecord[]>([])
   const [storageAreas, setStorageAreas] = useState<StorageArea[]>([])
+  const [cacheAreas, setCacheAreas] = useState<CacheArea[]>([])
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageError, setStorageError] = useState<string | null>(null)
   /**
@@ -685,6 +722,7 @@ export function App() {
    * choice with it.
    */
   const [preferences, setPreferences] = useState<ProfilePreferences>(DEFAULT_PREFERENCES)
+  const hotkeyPreferences = preferences.hotkeys ?? DEFAULT_HOTKEY_PREFERENCES
   const browserPreferences: BrowserPreferences =
     preferences.browser ?? DEFAULT_BROWSER_PREFERENCES
   const launchpadPreferences: LaunchpadPreferences =
@@ -1198,6 +1236,7 @@ export function App() {
       cancelled = true
     }
   }, [])
+  useEffect(() => window.devlens.onWorkspacePartitionChanged(setWorkspacePartition), [])
   useEffect(() => window.devlens.onModeChanged((state: ModeState) => setMode(state.mode)), [])
   useEffect(
     () =>
@@ -1698,8 +1737,37 @@ export function App() {
         next.delete(id)
         return next
       })
+
+      // Track tab switches for the Split View suggestion engine.
+      tabSwitchHistory.current.push(id)
+      if (tabSwitchHistory.current.length > 8) tabSwitchHistory.current = tabSwitchHistory.current.slice(-8)
+      const hist = tabSwitchHistory.current
+      if (hist.length >= SPLIT_SWITCH_THRESHOLD * 2 && hist[hist.length - 1] !== hist[hist.length - 2]) {
+        const pattern: string[] = []
+        for (let i = hist.length - 1; i >= 0 && pattern.length < SPLIT_SWITCH_THRESHOLD * 2; i--) {
+          pattern.unshift(hist[i])
+        }
+        if (pattern.length >= SPLIT_SWITCH_THRESHOLD * 2) {
+          const pair = [pattern[pattern.length - 2], pattern[pattern.length - 1]].sort()
+          let altCount = 0
+          for (let i = 0; i < pattern.length - 1; i++) {
+            const cur = [pattern[i], pattern[i + 1]].sort()
+            if (cur[0] === pair[0] && cur[1] === pair[1]) altCount++
+          }
+          if (altCount >= SPLIT_SWITCH_THRESHOLD) {
+            const pairId = splitPairKey(pair[0], pair[1])
+            if (!isSplitCooldowned(dismissedSplitPairs.current, pairId, SPLIT_SUGGEST_COOLDOWN_MS) && !splitView) {
+              const a = tabs.find((t) => t.id === pair[0])
+              const b = tabs.find((t) => t.id === pair[1])
+              if (a && b && a.title && b.title) {
+                setSplitSuggestion({ firstTitle: a.title, secondTitle: b.title })
+              }
+            }
+          }
+        }
+      }
     },
-    []
+    [tabs, splitView]
   )
 
   /**
@@ -1769,6 +1837,11 @@ export function App() {
        * is being torn down.
        */
       if (leaving?.private) void window.devlens.privateTabClose(id)
+      // Exit split view if either tab in the split pair is being closed
+      if (splitView && (splitView.first === id || splitView.second === id)) {
+        setSplitView(null)
+        setActiveView('desktop')
+      }
       setTabs(next)
       // Only this tab's view is torn down: its handles, refs and status go with it, and the
       // other tabs keep their pages, scroll positions and history untouched.
@@ -1813,7 +1886,7 @@ export function App() {
       ? bootstrap.wimhPartition
       : ghost.active
         ? bootstrap.ghostPartition
-        : profilePartition || bootstrap.profilePartition || bootstrap.partition
+        : workspacePartition || profilePartition || bootstrap.profilePartition || bootstrap.partition
 
   /**
    * The partition one tab loads on.
@@ -1858,10 +1931,10 @@ export function App() {
       if (isNormalMode(mode)) return false
       if (panel && !isPanelAvailable(mode, panel)) return false
       if (panel) setActivePanel(panel)
-      setSidebarOpen(true)
+      setSidebarPanelOpen(true)
       return true
     },
-    [mode]
+    [mode, setSidebarPanelOpen]
   )
 
   /**
@@ -1877,7 +1950,7 @@ export function App() {
   useEffect(() => {
     if (!isPanelAvailable(mode, activePanel)) {
       setActivePanel(isNormalMode(mode) ? 'bookmarks' : 'console')
-      setSidebarOpen(false)
+      setSidebarPanelOpen(false)
       return
     }
   }, [activePanel, mode])
@@ -1885,9 +1958,9 @@ export function App() {
   /** The toolbar toggle: closes what is open, otherwise asks to open it. */
   const toggleDeveloperArea = useCallback((): void => {
     if (isNormalMode(mode)) return
-    if (sidebarOpen) setSidebarOpen(false)
+    if (sidebarOpen !== 'hidden') setSidebarOpen('hidden')
     else openDeveloperArea()
-  }, [mode, openDeveloperArea, sidebarOpen])
+    }, [mode, openDeveloperArea, setSidebarPanelOpen, sidebarOpen])
 
   /** Renderer -> main: bind a guest webContents id to its viewport. */
   const handleGuestAttached = useCallback(
@@ -2118,7 +2191,7 @@ export function App() {
             'Explain what it is, the parts worth knowing before opening it, and any risks or fragile details.'
           void window.devlens.clipboardWrite(prompt).then((ok) => {
             setActivePanel('ai')
-            setSidebarOpen(true)
+            setSidebarPanelOpen(true)
             showStatus(
               ok
                 ? 'link context copied - ask the AI assistant to review it'
@@ -2383,7 +2456,7 @@ export function App() {
           setActiveView('desktop')
           // Nothing developer-facing may remain, and the preference is forgotten so that
           // returning to dev mode is an explicit act rather than a surprise.
-          setSidebarOpen(false)
+          setSidebarPanelOpen(false)
           showStatus('normal mode - max privacy and immersion')
         } else {
           showStatus('dev mode - full tooling unlocked')
@@ -2616,10 +2689,6 @@ export function App() {
     [showStatus]
   )
 
-  const insertPrefix = useCallback((text: string) => {
-    setAddress(text)
-  }, [])
-
   /* ---------------- cookies and site storage ---------------- */
 
   /**
@@ -2675,6 +2744,7 @@ export function App() {
       ])
       setCookies(cookieList)
       setStorageAreas(areas)
+      setCacheAreas([])
     } catch (error) {
       setStorageError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -2714,6 +2784,22 @@ export function App() {
     )
     await refreshStorage()
   }, [activeStatuses, activeTab, activeView, partitionForTab, refreshStorage, showStatus])
+  const setStorageEntry = useCallback(
+    async (area: StorageArea['id'], key: string, value: string) => {
+      const store = area === 'local' ? 'localStorage' : 'sessionStorage'
+      await activeFrame(activeView)?.evaluate(
+        `window.${store}.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)}), 'ok'`
+      )
+      showStatus(`${store}.${key} saved`)
+      await refreshStorage()
+    },
+    [activeFrame, activeView, refreshStorage, showStatus]
+  )
+
+  const clearSessionCache = useCallback(async () => {
+    const result = await window.devlens.sessionClearCache(partitionForTab(activeTab))
+    showStatus(result.ok ? 'session cache cleared' : result.error ?? 'could not clear cache')
+  }, [activeTab, partitionForTab, showStatus])
 
   /**
    * The inspector follows the page.
@@ -2955,27 +3041,94 @@ export function App() {
     }
   }, [activeFrame, activeView, browserPreferences.defaultZoom])
 
+  /** One renderer-side dispatch point for every configurable shortcut. */
+  const runHotkeyAction = useCallback(
+    (action: HotkeyActionId): void => {
+      switch (action) {
+        case 'new-tab':
+          openTab(null)
+          return
+        case 'close-tab':
+          if (tabs.length > 1 && activeTabId) closeTab(activeTabId)
+          else void window.devlens.windowClose()
+          return
+        case 'reload-page':
+          reloadBoth()
+          return
+        case 'find-in-page':
+          openFindBar()
+          return
+        case 'open-settings':
+          openSettingsCategory('home')
+          return
+        case 'open-private-tab':
+          void openPrivateTab()
+          return
+        case 'open-elements':
+        case 'open-console':
+        case 'open-network':
+          if (isNormalMode(mode)) {
+            showStatus('Developer panels need dev mode')
+            return
+          }
+          openDeveloperArea(
+            action === 'open-elements'
+              ? 'elements'
+              : action === 'open-console'
+                ? 'console'
+                : 'interceptor'
+          )
+          return
+        case 'toggle-sidebar':
+          if (isNormalMode(mode)) return
+          toggleDeveloperArea()
+          return
+        case 'toggle-ghost':
+          void (ghost.active ? leaveGhostSession() : enterGhostSession(null))
+          return
+        case 'toggle-wimh':
+          setDefenseOpen((open) => !open)
+          return
+        case 'open-shell-devtools':
+          void window.devlens.shellDevToolsOpen().catch(() => undefined)
+          return
+      }
+    },
+    [
+      activeTabId,
+      closeTab,
+      enterGhostSession,
+      ghost.active,
+      leaveGhostSession,
+      mode,
+      openDeveloperArea,
+      openFindBar,
+      openPrivateTab,
+      openSettingsCategory,
+      openTab,
+      reloadBoth,
+      showStatus,
+      tabs,
+      toggleDeveloperArea
+    ]
+  )
+
+  /** A page-owned keyboard event arrives here through the guest bridge. */
+  useEffect(() => window.devlens.onHotkeyTriggered(runHotkeyAction), [runHotkeyAction])
+
   /** Keyboard shortcuts for the dashboard, matching browser muscle memory. */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 't') {
+      if (event.key === 'F5') {
         event.preventDefault()
-        // A real new tab, not an overlay: whatever is on screen keeps running and keeps its
-        // address. The new tab starts on the dashboard until something opens in it.
-        openTab(null)
+        reloadBoth()
         return
       }
 
-      /** Refresh the active page, never the DevLens shell or its profile gate. */
-      if (
-        event.key === 'F5' ||
-        ((event.ctrlKey || event.metaKey) &&
-          !event.shiftKey &&
-          !event.altKey &&
-          event.key.toLowerCase() === 'r')
-      ) {
+      const configuredAction = findHotkeyAction(hotkeyPreferences.bindings, event)
+      if (configuredAction) {
         event.preventDefault()
-        reloadBoth()
+        runHotkeyAction(configuredAction)
         return
       }
 
@@ -3001,53 +3154,6 @@ export function App() {
         return
       }
 
-      /** Ctrl/Cmd+F opens the same find bar in both modes and on every shell page. */
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        event.key.toLowerCase() === 'f'
-      ) {
-        event.preventDefault()
-        openFindBar()
-        return
-      }
-
-      /**
-       * Ctrl/Cmd+Shift+P: a maximum-protection private tab.
-       *
-       * It is handled here, above the developer-shortcut table, and it deliberately works in
-       * both modes: this is a privacy feature the operator asks for, not a developer tool, and
-       * "be normal when you need" should not mean "lose your protection in normal mode".
-       */
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        event.shiftKey &&
-        event.key.toLowerCase() === 'p'
-      ) {
-        event.preventDefault()
-        void openPrivateTab()
-        return
-      }
-
-      /**
-       * Ctrl/Cmd+W closes the *tab*, not the window.
-       *
-       * The application menu used to own that accelerator through its Window role, which closed
-       * the whole browser as soon as it was pressed. Closing the window is only right when the
-       * last tab goes, which is what every browser does.
-       */
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === 'w'
-      ) {
-        event.preventDefault()
-        if (tabs.length > 1 && activeTabId) closeTab(activeTabId)
-        else void window.devlens.windowClose()
-        return
-      }
-
       /**
        * In normal mode every developer combination is ignored outright - the mode switch
        * included, so a single keypress can never reveal the developer area. The toolbar's mode
@@ -3055,12 +3161,6 @@ export function App() {
        */
       if (isDeveloperShortcut(event)) {
         if (isNormalMode(mode)) return
-
-        if (event.key.toLowerCase() === 'd') {
-          event.preventDefault()
-          void changeMode('normal')
-          return
-        }
 
         const panelByKey: Record<string, SidebarPanel> = {
           c: 'console',
@@ -3074,17 +3174,6 @@ export function App() {
           openDeveloperArea(panel)
           return
         }
-      }
-
-      /**
-       * The defense overlay is the deliberate exception: privacy stays one keypress away in
-       * both modes, while every combination that could reveal the *monitoring* workspace is
-       * still ignored in normal mode above.
-       */
-      if (isDefenseShortcut(event)) {
-        event.preventDefault()
-        setDefenseOpen((open) => !open)
-        return
       }
 
       // Escape dismisses the topmost on-demand surface, unless the omnibox owns the key.
@@ -3789,7 +3878,7 @@ export function App() {
    * One switch keeps the wiring in one place: the menu names an action, this decides what the
    * browser does with it - which tab, which frame, which session.
    */
-  const handleTabAction = (action: string, tabId: string): void => {
+  const handleTabAction = (action: string, tabId: string, _groupId?: string, _partnerId?: string): void => {
       const tab = tabs.find((entry) => entry.id === tabId)
       if (!tab) return
       const handles = frames.current[tabId]
@@ -3853,7 +3942,7 @@ export function App() {
            * menu reaches it in both modes rather than being a developer-only door.
            */
           setActivePanel('ai')
-          setSidebarOpen(true)
+          setSidebarPanelOpen(true)
           showStatus(`opening the AI assistant for ${tab.title || url}`)
           return
         case 'bookmark':
@@ -4038,7 +4127,30 @@ export function App() {
             Object.entries(tabIcons).map(([id, entry]) => [id, entry.dataUrl])
           )}
           notifiedTabIds={notifiedTabIds}
-        />
+        
+          tabGroups={tabsPreferences.groups}
+          onAssignTabToGroup={(tabId, groupId) => {
+            setTabs((current) =>
+              current.map((entry) => (entry.id === tabId ? { ...entry, groupId: groupId ?? undefined } : entry))
+            )
+          }}
+          onToggleTabGroup={(groupId) => {
+            saveTabsPreferences({
+              groups: tabsPreferences.groups.map((group) =>
+                group.id === groupId ? { ...group, collapsed: !group.collapsed } : group
+              )
+            })
+          }}
+          onCreateTabGroup={(tabId, name, color) => {
+            const newGroup = { id: 'group-' + Date.now(), name, color, collapsed: false }
+            saveTabsPreferences({ groups: [...tabsPreferences.groups, newGroup] })
+            setTabs((current) =>
+              current.map((entry) =>
+                entry.id === tabId ? { ...entry, groupId: newGroup.id } : entry
+              )
+            )
+          }}
+/>
       )}
       <Toolbar
         address={address}
@@ -4060,6 +4172,36 @@ export function App() {
           engines: omniboxSettings.engines,
           shortcuts: omniboxSettings.shortcuts,
           favicons: customFavicons
+        }}
+        splitSuggestion={splitSuggestion}
+        onOpenSplitSuggestion={() => {
+          if (splitSuggestion) {
+            const a = tabs.find((t) => t.title === splitSuggestion.firstTitle)
+            const b = tabs.find((t) => t.title === splitSuggestion.secondTitle)
+            if (a && b) {
+              setSplitView({ first: a.id, second: b.id })
+              setActiveView("mobile")
+              showStatus("Split View: " + splitSuggestion.firstTitle + " | " + splitSuggestion.secondTitle)
+              const pairId = splitPairKey(a.id, b.id)
+              dismissedSplitPairs.current.set(pairId, Date.now())
+            }
+          }
+          setSplitSuggestion(null)
+        }}
+        onDismissSplitSuggestion={() => {
+          if (splitSuggestion) {
+            const first = tabs.find((t) => t.title === splitSuggestion.firstTitle)
+            const second = tabs.find((t) => t.title === splitSuggestion.secondTitle)
+            if (first && second) {
+              dismissedSplitPairs.current.set(splitPairKey(first.id, second.id), Date.now())
+            }
+            setSplitSuggestion(null)
+          }
+        }}
+        splitActive={splitView !== null}
+        onExitSplit={() => {
+          setSplitView(null)
+          setActiveView("desktop")
         }}
         omniboxHint={omniboxHint}
         sessionChip={
@@ -4144,7 +4286,7 @@ export function App() {
         syncEnabled={syncEnabled}
         onToggleSync={() => setSyncEnabled((value) => !value)}
         onOpenInIde={() => void openEntryFile(bootstrap, showStatus)}
-        sidebarOpen={sidebarOpen}
+        sidebarOpen={sidebarOpen === 'open'}
         onToggleSidebar={toggleDeveloperArea}
         ideLabel={bootstrap.ide.entryFile}
         ideScheme={bootstrap.ide.scheme}
@@ -4194,7 +4336,30 @@ export function App() {
             onClose={closeTab}
             onNewTab={() => openTab(null)}
             onTabAction={handleTabAction}
-          />
+          
+            tabGroups={tabsPreferences.groups}
+            onAssignTabToGroup={(tabId, groupId) => {
+              setTabs((current) =>
+                current.map((entry) => (entry.id === tabId ? { ...entry, groupId: groupId ?? undefined } : entry))
+              )
+            }}
+            onToggleTabGroup={(groupId) => {
+              saveTabsPreferences({
+                groups: tabsPreferences.groups.map((group) =>
+                  group.id === groupId ? { ...group, collapsed: !group.collapsed } : group
+                )
+              })
+            }}
+            onCreateTabGroup={(tabId, name, color) => {
+              const newGroup = { id: 'group-' + Date.now(), name, color, collapsed: false }
+              saveTabsPreferences({ groups: [...tabsPreferences.groups, newGroup] })
+              setTabs((current) =>
+                current.map((entry) =>
+                  entry.id === tabId ? { ...entry, groupId: newGroup.id } : entry
+                )
+              )
+            }}
+/>
         )}
         {/* The dock, on the left: the everyday four in normal mode, the whole toolset in dev.
             It is always mounted - it is browser chrome, not a developer surface - and the panel
@@ -4317,7 +4482,13 @@ export function App() {
             onRefreshStorage: () => void refreshStorage(),
             onRemoveCookie: (name) => void removeCookie(name),
             onRemoveStorageEntry: (area, key) => void removeStorageEntry(area, key),
-            onClearSiteStorage: () => void clearSiteStorage()
+            onClearSiteStorage: () => void clearSiteStorage(),
+            caches: cacheAreas,
+            guestId: activeFrame(activeView)?.guestId() ?? null,
+            onSetStorageEntry: setStorageEntry,
+            onRemoveCache: () => undefined,
+            onClearCache: () => void clearSessionCache(),
+            onOpenGuestDevTools: () => activeFrame(activeView)?.openGuestDevTools()
           }}
         />
 
@@ -4368,6 +4539,139 @@ export function App() {
                 />
               </div>
             )}
+            {/* Split View: two tabs shown side-by-side or stacked. */}
+            {splitView && (() => {
+              const a = tabs.find((t) => t.id === splitView.first)
+              const b = tabs.find((t) => t.id === splitView.second)
+              if (!a || !b) return null
+              const dir = splitView.layout === 'column' ? 'flex-col' : 'flex-row'
+              return (
+                <div className={['flex', dir, 'h-full w-full items-stretch gap-4'].join(' ')}>
+                  <div className="flex flex-1 flex-col min-w-0">
+                    {capabilities.dualViewport && (
+                      <ViewportFrame
+                        key={a.id + '-mobile'}
+                        viewId="mobile"
+                        title="Mobile"
+                        initialUrl={a.url ?? ''}
+                        guestPreloadUrl={bootstrap.guestPreloadUrl}
+                        partition={partitionForTab(a)}
+                        width={deviceSize.width}
+                        height={deviceSize.height}
+                        fitScale={deviceScale}
+                        dpr={viewport.dpr}
+                        hinge={Boolean(viewport.state.hinge)}
+                        foldState={viewport.state.id}
+                        status={(statuses[a.id] ?? EMPTY_TAB_STATUSES).mobile}
+                        active={activeView === 'mobile'}
+                        onActivate={setActiveView}
+                        onScroll={(viewId, message) => handleScroll(a.id, viewId, message)}
+                        onStatusPatch={(viewId, patch) => patchTabStatus(a.id, viewId, patch)}
+                        onGuestAttached={handleGuestAttached}
+                        onMeasured={handleMeasured}
+                        onFindResult={handleFindResult}
+                        onPageFindResult={handlePageFindResult}
+                        onZoomWheel={zoomFromGuestWheel}
+                        onContextMenu={(payload) => handleGuestContextMenu(a.id, 'mobile', payload)}
+                        onInteraction={() => setPageMenu(null)}
+                        overrideCss={cssApplied}
+                        overrideDesignMode={designMode}
+                        devCapabilities={mode === 'dev'}
+                        inspectionLease={inspection.source === 'lease'}
+                      />
+                    )}
+                    <ViewportFrame
+                      key={a.id + '-desktop'}
+                      viewId="desktop"
+                      title="Desktop"
+                      initialUrl={a.url ?? ''}
+                      guestPreloadUrl={bootstrap.guestPreloadUrl}
+                      partition={partitionForTab(a)}
+                      width={desktopWidth}
+                      height={null}
+                      status={(statuses[a.id] ?? EMPTY_TAB_STATUSES).desktop}
+                      active={activeView === 'desktop'}
+                      onActivate={setActiveView}
+                      onScroll={(viewId, message) => handleScroll(a.id, viewId, message)}
+                      onStatusPatch={(viewId, patch) => patchTabStatus(a.id, viewId, patch)}
+                      onGuestAttached={handleGuestAttached}
+                      onMeasured={handleMeasured}
+                      onFindResult={handleFindResult}
+                      onPageFindResult={handlePageFindResult}
+                      onZoomWheel={zoomFromGuestWheel}
+                      onContextMenu={(payload) => handleGuestContextMenu(a.id, 'desktop', payload)}
+                      onInteraction={() => setPageMenu(null)}
+                      overrideCss={cssApplied}
+                      overrideDesignMode={designMode}
+                      chrome={capabilities.dualViewport}
+                      devCapabilities={mode === 'dev'}
+                      inspectionLease={inspection.source === 'lease'}
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col min-w-0">
+                    {capabilities.dualViewport && (
+                      <ViewportFrame
+                        key={b.id + '-mobile'}
+                        viewId="mobile"
+                        title="Mobile"
+                        initialUrl={b.url ?? ''}
+                        guestPreloadUrl={bootstrap.guestPreloadUrl}
+                        partition={partitionForTab(b)}
+                        width={deviceSize.width}
+                        height={deviceSize.height}
+                        fitScale={deviceScale}
+                        dpr={viewport.dpr}
+                        hinge={Boolean(viewport.state.hinge)}
+                        foldState={viewport.state.id}
+                        status={(statuses[b.id] ?? EMPTY_TAB_STATUSES).mobile}
+                        active={activeView === 'mobile'}
+                        onActivate={setActiveView}
+                        onScroll={(viewId, message) => handleScroll(b.id, viewId, message)}
+                        onStatusPatch={(viewId, patch) => patchTabStatus(b.id, viewId, patch)}
+                        onGuestAttached={handleGuestAttached}
+                        onMeasured={handleMeasured}
+                        onFindResult={handleFindResult}
+                        onPageFindResult={handlePageFindResult}
+                        onZoomWheel={zoomFromGuestWheel}
+                        onContextMenu={(payload) => handleGuestContextMenu(b.id, 'mobile', payload)}
+                        onInteraction={() => setPageMenu(null)}
+                        overrideCss={cssApplied}
+                        overrideDesignMode={designMode}
+                        devCapabilities={mode === 'dev'}
+                        inspectionLease={inspection.source === 'lease'}
+                      />
+                    )}
+                    <ViewportFrame
+                      key={b.id + '-desktop'}
+                      viewId="desktop"
+                      title="Desktop"
+                      initialUrl={b.url ?? ''}
+                      guestPreloadUrl={bootstrap.guestPreloadUrl}
+                      partition={partitionForTab(b)}
+                      width={desktopWidth}
+                      height={null}
+                      status={(statuses[b.id] ?? EMPTY_TAB_STATUSES).desktop}
+                      active={activeView === 'desktop'}
+                      onActivate={setActiveView}
+                      onScroll={(viewId, message) => handleScroll(b.id, viewId, message)}
+                      onStatusPatch={(viewId, patch) => patchTabStatus(b.id, viewId, patch)}
+                      onGuestAttached={handleGuestAttached}
+                      onMeasured={handleMeasured}
+                      onFindResult={handleFindResult}
+                      onPageFindResult={handlePageFindResult}
+                      onZoomWheel={zoomFromGuestWheel}
+                      onContextMenu={(payload) => handleGuestContextMenu(b.id, 'desktop', payload)}
+                      onInteraction={() => setPageMenu(null)}
+                      overrideCss={cssApplied}
+                      overrideDesignMode={designMode}
+                      chrome={capabilities.dualViewport}
+                      devCapabilities={mode === 'dev'}
+                      inspectionLease={inspection.source === 'lease'}
+                    />
+                  </div>
+                </div>
+              )
+            })()}
             {/* Nothing is mounted until there is a page: a fresh start shows the dashboard and
                 no webview at all, so there is no placeholder URL to load or fail. */}
             {tabs
@@ -4491,6 +4795,7 @@ export function App() {
                   workspaces,
                   wimh,
                   ghostActive: ghost.active,
+                  privateTab: privateTabs.length > 0,
                   mode,
                   recent: history.slice(0, 6).map((entry) => ({ url: entry.url, title: entry.title })),
                   bookmarks,
@@ -4547,8 +4852,14 @@ export function App() {
                 onRemoveWorkspace={(path) => void removeWorkspace(path)}
                 onActivateWorkspace={(path) => void activateWorkspace(path)}
                 onOpenInIde={(path) => void openWorkspaceInIde(path)}
-                onInsertPrefix={insertPrefix}
+
                 onToggleWimh={() => void toggleWimh(!wimh?.active)}
+                onOpenSettings={openSettingsCategory}
+                appearance={appearancePreferences}
+                onAppearance={saveAppearancePreferences}
+                onLaunchpad={saveLaunchpadPreferences}
+                onChooseWallpaper={chooseLaunchpadWallpaper}
+                onOpenPrivateGuide={openInternalTab}
               />
             )}
             {activeInternal === 'blank' && (
@@ -4647,6 +4958,16 @@ export function App() {
                 onOpenThemes={() => openInternalTab('appearance-themes')}
                 tabsPreferences={tabsPreferences}
                 onTabs={saveTabsPreferences}
+                hotkeys={hotkeyPreferences}
+                onHotkeys={(next) =>
+                  saveTabsPreferences({
+                    hotkeys: Object.entries(next.bindings).map(([id, shortcut], index) => ({
+                      id,
+                      label: `Shortcut ${index + 1}`,
+                      shortcut
+                    }))
+                  })
+                }
                 languages={languagePreferences}
                 onLanguages={saveLanguagePreferences}
                 profileAsk={profileAsk}
@@ -4718,6 +5039,7 @@ export function App() {
             mode={mode}
             profileName={profiles.find((profile) => profile.active)?.name ?? 'Default'}
             onOpenGuestDevTools={() => activeFrame(activeView)?.openGuestDevTools()}
+        onOpenShellDevTools={() => undefined}
           />
         </main>
 

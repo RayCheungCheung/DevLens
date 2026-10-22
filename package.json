@@ -5,6 +5,68 @@
   "description": "DevLens - a workflow-native developer browser with side-by-side device previews and editor integration.",
   "author": "DevLens",
   "main": "out/main/index.js",
+  "build": {
+    "appId": "com.devlens.browser",
+    "productName": "DevLens",
+    "directories": {
+      "output": "dist/${version}",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "asar": true,
+    "protocols": [
+      {
+        "name": "DevLens OAuth Callback",
+        "schemes": [
+          "devlens"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "arch": [
+        "x64",
+        "arm64"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "DevLens",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "arch": [
+        "x64",
+        "arm64"
+      ],
+      "category": "public.app-category.developer-tools",
+      "darkModeSupport": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "arch": [
+        "x64",
+        "arm64"
+      ],
+      "category": "Development"
+    }
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "dev:watch": "electron-vite dev --watch",
@@ -13,7 +75,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:preload": "tsc --noEmit -p tsconfig.preload.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:preload && npm run typecheck:web"
+    "typecheck": "npm run typecheck:node && npm run typecheck:preload && npm run typecheck:web",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis zip --x64 --arm64",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64 --arm64"
   },
   "dependencies": {
     "lucide-react": "^1.57.0",

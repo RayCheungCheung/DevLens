@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Globe, Loader2, Plus, VenetianMask, VolumeX, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Globe,
+  Loader2,
+  Plus,
+  VenetianMask,
+  VolumeX,
+  X
+} from 'lucide-react'
 import type { WorkspaceMode } from '@shared/mode'
+import type { TabGroup } from '@shared/tabs'
 import {
   PRIVATE_TAB_LABEL,
   PRIVATE_TAB_LONG_PRESS_MS,
@@ -11,6 +22,7 @@ import { DevLensMark } from '@renderer/components/DevLensMark'
 import { MARK_BOX } from '@renderer/components/PrefixIcons'
 import { TabContextMenu, type TabMenuAction } from '@renderer/components/TabContextMenu'
 import { NewTabMenu } from '@renderer/components/NewTabMenu'
+import { TabGroupDialog } from '@renderer/components/TabGroupDialog'
 
 export interface PageTab {
   id: string
@@ -38,11 +50,17 @@ export interface PageTab {
    * field: their partition is per-tab by design.
    */
   partition?: string
+  /** Persistent tab-group association. */
+  groupId?: string
 }
 
 interface TabStripProps {
   tabs: PageTab[]
   activeId: string | null
+  /** Both tab ids currently shown in Split View. */
+  splitTabIds?: Set<string>
+  tabGroups?: TabGroup[]
+  tabGroupsEnabled?: boolean
   mode: WorkspaceMode
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -50,7 +68,10 @@ interface TabStripProps {
   /** The second entry on the `+` menu: a tab that runs at Level 3 on its own session. */
   onNewPrivateTab: () => void
   /** Right-click menu: one entry point, so the strip does not need twenty callbacks. */
-  onTabAction: (action: TabMenuAction, tabId: string) => void
+  onTabAction: (action: TabMenuAction, tabId: string, groupId?: string, partnerId?: string) => void
+  onAssignTabToGroup: (tabId: string, groupId: string | null) => void
+  onToggleTabGroup: (groupId: string) => void
+  onCreateTabGroup: (tabId: string, name: string, color: string) => void
   canReopen: boolean
   /** data URLs keyed by tab id, resolved in the main process. */
   icons?: Record<string, string>
@@ -98,6 +119,14 @@ function domainInitial(host: string): string {
   return initial ? initial.toUpperCase() : ''
 }
 
+/**
+ * Tab icons arrive from main as local data URLs. Reject malformed or remote strings before they
+ * become an `<img>` request, so only an actual image decode failure triggers the letter avatar.
+ */
+function validFaviconDataUrl(value: string | undefined): value is string {
+  return typeof value === 'string' && /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(value)
+}
+
 /** The chip's leading glyph: the site's favicon, or the site's initial. */
 function TabIcon({ tab, icon }: { tab: PageTab; icon?: string }) {
   const [broken, setBroken] = useState(false)
@@ -118,7 +147,7 @@ function TabIcon({ tab, icon }: { tab: PageTab; icon?: string }) {
       </span>
     )
   }
-  if (icon && !broken) {
+  if (validFaviconDataUrl(icon) && !broken) {
     return (
       <img
         data-testid="tab-favicon"
@@ -218,17 +247,25 @@ function PinnedTabChip({
 export function TabStrip({
   tabs,
   activeId,
+  splitTabIds = new Set(),
+  tabGroups = [],
+  tabGroupsEnabled = true,
   mode,
   onSelect,
   onClose,
   onNewTab,
   onNewPrivateTab,
   onTabAction,
+  onAssignTabToGroup,
+  onToggleTabGroup,
+  onCreateTabGroup,
   canReopen,
   icons = {},
   notifiedTabIds = new Set()
 }: TabStripProps) {
   const [menuTab, setMenuTab] = useState<{ tabId: string; x: number; y: number } | null>(null)
+  const [groupDialogTabId, setGroupDialogTabId] = useState<string | null>(null)
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
   /** Where the `+` menu should appear, or null when it is closed. */
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null)
   const newTabButton = useRef<HTMLButtonElement | null>(null)
@@ -272,6 +309,62 @@ export function TabStrip({
     [onClose]
   )
 
+  /** A split partner must be a loaded web tab adjacent to the one that was right-clicked. */
+  const splitPartnerFor = (tabId: string): { id: string; title: string } | undefined => {
+    const index = tabs.findIndex((tab) => tab.id === tabId)
+    if (index < 0) return undefined
+    const current = tabs[index]
+    if (!current.url || current.unloaded || internalRouteOf(current.url)) return undefined
+    const candidates = [tabs[index + 1], tabs[index - 1]]
+    const partner = candidates.find(
+      (tab) =>
+        tab &&
+        tab.url &&
+        !tab.unloaded &&
+        !internalRouteOf(tab.url)
+    )
+    return partner ? { id: partner.id, title: partner.title || partner.host } : undefined
+  }
+
+  const handleMenuAction = (
+    action: TabMenuAction,
+    tabId: string,
+    groupId?: string
+  ): void => {
+    if (action === 'group-new') {
+      setGroupDialogTabId(tabId)
+      return
+    }
+    if (action === 'group-assign') {
+      onAssignTabToGroup(tabId, groupId ?? null)
+      return
+    }
+    if (action === 'group-remove') {
+      onAssignTabToGroup(tabId, null)
+      return
+    }
+    const partnerId = (action === "split-side-by-side" || action === "split-stacked") ? splitPartnerFor(tabId)?.id : undefined
+    onTabAction(action, tabId, groupId, partnerId)
+  }
+
+  const regularTabs = tabs.filter((tab) => !tab.pinned)
+  const orderedRegularTabs: PageTab[] = []
+  const emittedGroups = new Set<string>()
+  for (const tab of regularTabs) {
+    if (!tab.groupId) {
+      orderedRegularTabs.push(tab)
+      continue
+    }
+    if (emittedGroups.has(tab.groupId)) continue
+    emittedGroups.add(tab.groupId)
+    orderedRegularTabs.push(...regularTabs.filter((entry) => entry.groupId === tab.groupId))
+  }
+  const firstGroupTabs = new Set(
+    [...emittedGroups].map(
+      (groupId) => orderedRegularTabs.find((tab) => tab.groupId === groupId)?.id ?? ''
+    )
+  )
+
   /** Held long enough: offer both kinds of tab, anchored under the button. */
   const startHold = (): void => {
     cancelHold()
@@ -291,7 +384,7 @@ export function TabStrip({
       role="tablist"
       aria-label="Open pages"
       /* The strip doubles as the window's drag handle now that the native title bar is gone. */
-      className="nova-drag flex h-10.5 shrink-0 items-end gap-2 overflow-x-auto bg-ink-950 px-3 py-1.5"
+      className="nova-drag flex h-10.5 shrink-0 items-end gap-2 overflow-x-auto bg-[color-mix(in_srgb,var(--devlens-chrome-base)_85%,var(--theme-accent-base)_15%)] px-3 py-1.5"
     >
       {/* Pinned tabs: fixed position on the left, square, only favicon */}
       {tabs
@@ -318,15 +411,68 @@ export function TabStrip({
       )}
 
       {/* Regular tabs: scrollable, show title and close button */}
-      {tabs
-        .filter((tab) => !tab.pinned)
-        .map((tab) => {
+      {orderedRegularTabs.map((tab) => {
           const active = tab.id === activeId
+          const group = tab.groupId
+            ? tabGroups.find((entry) => entry.id === tab.groupId)
+            : undefined
+          const collapsed = group?.collapsed === true
           return (
+            <Fragment key={tab.id}>
+              {group && firstGroupTabs.has(tab.id) && (
+                <button
+                  type="button"
+                  data-testid="tab-group"
+                  data-group-id={group.id}
+                  aria-expanded={!collapsed}
+                  aria-label={`${group.name} tab group, ${regularTabs.filter((entry) => entry.groupId === group.id).length} tabs`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleTabGroup(group.id)
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setDragOverGroupId(group.id)
+                  }}
+                  onDragLeave={() => setDragOverGroupId((current) => current === group.id ? null : current)}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    const draggedId = event.dataTransfer.getData('application/x-devlens-tab')
+                    setDragOverGroupId(null)
+                    if (draggedId) onAssignTabToGroup(draggedId, group.id)
+                  }}
+                  className={[
+                    'nova-no-drag mb-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-left transition-colors',
+                    dragOverGroupId === group.id
+                      ? 'border-white/40 bg-white/[0.10]'
+                      : 'border-[var(--devlens-hairline-strong)] bg-white/[0.035]'
+                  ].join(' ')}
+                  style={{ borderColor: dragOverGroupId === group.id ? group.color : undefined }}
+                  title={`${group.name} - click to ${collapsed ? 'expand' : 'collapse'}, drop tabs here to add`}
+                >
+                  {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                  <Folder size={11} style={{ color: group.color }} />
+                  <span className="max-w-[110px] truncate text-[10px] text-ink-200">
+                    {group.name}
+                  </span>
+                  <span className="font-mono text-[8px] text-ink-600">
+                    {regularTabs.filter((entry) => entry.groupId === group.id).length}
+                  </span>
+                </button>
+              )}
+              {(!collapsed || active) && (
             <div
-              key={tab.id}
               data-testid="page-tab"
               data-private={tab.private ? 'true' : 'false'}
+              data-split={splitTabIds.has(tab.id) ? 'true' : 'false'}
+              data-group-id={tab.groupId ?? ''}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('application/x-devlens-tab', tab.id)
+              }}
               role="tab"
               aria-selected={active}
               aria-label={tab.title || 'New tab'}
@@ -349,6 +495,7 @@ export function TabStrip({
               className={[
                 'nova-tab nova-no-drag group flex h-9 max-w-[220px] min-w-[132px] shrink-0 items-center gap-2 pl-3 pr-2',
                 active ? 'nova-tab--active' : '',
+                splitTabIds.has(tab.id) ? 'border-[var(--devlens-accent-line)]' : '',
                 tab.private ? 'nova-tab--private' : ''
               ].join(' ')}
             >
@@ -409,6 +556,8 @@ export function TabStrip({
                 <X size={12} />
               </button>
             </div>
+              )}
+            </Fragment>
           )
         })}
 
@@ -473,10 +622,19 @@ export function TabStrip({
             hasDuplicates: tabs.some(
               (tab) =>
                 tab.id !== menuTab.tabId && Boolean(tab.url) && tab.url === (tabs.find((t) => t.id === menuTab.tabId)?.url)
-            )
+            ),
+            splitPartner: splitPartnerFor(menuTab.tabId),
+            tabGroups: tabGroupsEnabled ? tabGroups : undefined
           }}
-          onAction={onTabAction}
+          onAction={handleMenuAction}
           onClose={() => setMenuTab(null)}
+        />
+      )}
+
+      {groupDialogTabId && (
+        <TabGroupDialog
+          onSave={(name, color) => onCreateTabGroup(groupDialogTabId, name, color)}
+          onClose={() => setGroupDialogTabId(null)}
         />
       )}
     </div>

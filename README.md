@@ -1,5 +1,11 @@
 # DevLens
 
+<div align="center">
+
+[English](README.md) | [简体中文](docs/locales/README_zh-CN.md) | [繁體中文](docs/locales/README_zh-TW.md) | [한국어](docs/locales/README_ko.md) | [Deutsch](docs/locales/README_de.md) | [Español](docs/locales/README_es.md) | [Français](docs/locales/README_fr.md) | [Italiano](docs/locales/README_it.md) | [Dansk](docs/locales/README_da.md) | [日本語](docs/locales/README_ja.md) | [Polski](docs/locales/README_pl.md) | [Русский](docs/locales/README_ru.md) | [Bosanski](docs/locales/README_bs.md) | [العربية](docs/locales/README_ar.md) | [Norsk](docs/locales/README_no.md) | [Português (Brasil)](docs/locales/README_pt-BR.md) | [ไทย](docs/locales/README_th.md) | [Türkçe](docs/locales/README_tr.md) | [Українська](docs/locales/README_uk.md) | [বাংলা](docs/locales/README_bn.md) | [Ελληνικά](docs/locales/README_el.md) | [Tiếng Việt](docs/locales/README_vi.md)
+
+</div>
+
 <p align="center">
   <img src="docs/assets/lensy.svg" alt="Lensy, the DevLens mascot" width="300" />
 </p>
@@ -8,9 +14,13 @@
 
 A workflow-native developer browser: one URL previewed in two device frames at once, with a
 live console/network feed, an HTTP interceptor and repeater, live design/CSS overrides, a
-recon report and an AI debugger - plus one-click hand-off to your editor.
+recon report and a provider-hosted AI assistant - plus one-click hand-off to your editor.
 
 Built with Electron 44, Vite 7, React 19, TypeScript (strict) and Tailwind CSS 4.
+
+The current build also includes an embedded Chrome DevTools Protocol inspector, a JavaScript
+REPL, editable profile-scoped hotkeys, direct Launchpad customization and guided Private/WImH
+privacy explanations.
 
 ## Quick start
 
@@ -33,7 +43,9 @@ the DevLens Launchpad by default; New Tab and Homepage targets can be changed un
 
 ### Verification
 
-Run these from the workspace root. They use isolated user-data directories and fixture servers:
+The verification harness is outside the application directory at `work/verify/`. Run these
+commands from the workspace root (the parent of `outputs/devlens`). They use isolated
+user-data directories and fixture servers:
 
 ```bash
 node work/verify/verify-repair.mjs
@@ -77,17 +89,29 @@ jump can never be dropped, change-gated so an idle page costs nothing, and backe
 compositor is not driving (a scaled viewport is a good example). The sync toggle in the
 toolbar turns the whole path off.
 
-**Console & Network panel.** The main process instruments every webview `webContents`
-(`console-message`, navigation lifecycle) and the shared session's `webRequest`
-(`onCompleted`, `onErrorOccurred`), tags each event with the viewport it came from and
-pushes it to the UI over IPC. The panel filters by kind and text, expands to show the
-source URL, duration and resource type, and can hand a source location to the editor.
+**Elements inspector.** The Elements tool connects to the active guest through the Chrome
+DevTools Protocol and presents a live DOM tree. Selecting an element shows its attributes,
+outer HTML, matched styles, computed styles and box model. Attributes, HTML and editable CSS
+rules can be applied back to the page, and `refresh` re-reads the document after framework
+changes. The panel can also hand the guest to a separate external DevTools window.
 
-**AI Debugger Assistant.** The sidebar tab, context chips, prompt box, quick actions and
-transcript are real, and the answer streams in token by token from the configured provider
-(see [AI providers](#ai-providers)). Every chip is attached context: console digest, failed
-requests, the host/endpoint inventory, interceptor rules and the CSS overrides. `Stop`
-aborts a running completion; the provider badge shows which model answered.
+**Console and JavaScript REPL.** The main process instruments every webview `webContents`
+(`console-message`, navigation lifecycle) and tags each event with its viewport. The Console
+tool filters by event kind, level and text, expands source details, and can hand a source
+location to the editor. Its REPL evaluates expressions in the active guest with
+`Runtime.evaluate`, awaits promises, shows thrown errors and keeps command history.
+
+**Network workflow.** The shared session's `webRequest` hooks capture requests, status,
+timing, request and response headers, MIME type, cache state and body previews. The Network
+tool filters that capture and hosts the interceptor and repeater described below.
+
+**AI assistant.** The sidebar opens the official web chat for the selected provider: Google
+Gemini, DeepSeek, ChatGPT or Anthropic Claude. Each provider has its own persistent partition
+per profile, so accounts and sessions do not leak between providers or browsing profiles.
+`Summarise page` composes the current page title, active URL and captured developer context
+into the provider's own prompt field without sending it. The separate local `aiAsk` pipeline
+is still available as an IPC capability for context-aware answers in Dev Mode, but it is not
+the assistant panel's primary interface.
 
 **Live design & CSS overrides.** Design mode flips `document.designMode` inside the active
 viewport (or both) so text and structure can be edited in place, with a hover outline so it
@@ -117,6 +141,12 @@ small observations (plain HTTP target, authentication surface, state-changing en
 5xx responses, third-party origins). The panel renders the report live and exports it as
 Markdown or JSON - either through a save dialog or straight into `report.outputDir`.
 
+**Application inspector.** The Application tool reads the active session and document rather
+than a separate mock store. It lists cookies, `localStorage`, `sessionStorage` and Cache
+Storage for the current origin. Storage keys can be added or edited, individual entries and
+caches can be removed, HTTP cache can be cleared without touching cookies, and
+`Clear site data` removes this origin's cookies and site storage together.
+
 **Open in editor / click-to-source.** Developer workspace detects installed VS Code-compatible
 editors from system URI registrations (VS Code, Insiders, VSCodium, Cursor, CodeBuddy, CodeBuddy
 CN, Trae and Windsurf). A switch disables the whole hand-off and greys out the editor dropdown;
@@ -144,6 +174,12 @@ the current tab, and whether `Ctrl+Tab` follows MRU order.
 `Alt/⌘/Ctrl+Enter` in the omnibox, and `Alt/⌘/Ctrl`-click or a middle click on a dashboard card,
 open the target in its own tab.
 
+Tab favicons follow Chromium's `page-favicon-updated` event rather than waiting for a static DOM
+scan. Main downloads the winning candidate and pushes an IPC-safe `data:` URL to every tab on the
+same host. Fallback order is the page-declared icon, `/favicon.ico`, then Google's favicon endpoint
+for public hosts. The renderer accepts only valid local image data URLs; the letter avatar appears
+only when no valid icon exists or the image actually fails to decode.
+
 The tab strip is also the top of the window. DevLens runs frameless (`titleBarStyle: 'hidden'`,
 with the OS window buttons drawn as an overlay on Windows and Linux and traffic lights inset on
 macOS), so nothing - no application name, no title bar - sits above the tabs. The window keeps
@@ -165,15 +201,37 @@ can touch the tab that was on screen before: a new tab is a new tab, not an over
 tab destroys exactly that tab's views and hands the window to its neighbour. `Ctrl/Cmd+L` focuses
 the address bar from anywhere, which matters on the new tab page because it is a page.
 
+**Split View.** Switching repeatedly between the same two web tabs - at least three times within
+15 seconds - raises a compact suggestion under the omnibox. Accepting it places both existing tab
+views side by side without reloading either page. The tab context menu also offers Side by Side
+and Stacked layouts with the nearest eligible neighbour. Closing either tab, unloading it,
+navigating it to a system page, selecting an unrelated tab, or pressing the toolbar split button
+ ends the layout while preserving the frames still open. Dismissing the suggestion, or accepting it for that pair, starts a 10-minute cooldown so the same two tabs do not prompt again; a focused omnibox postpones the popup until typing finishes.
+
+**Tab groups.** The tab context menu's `Add to Group` submenu can create a named, colour-coded
+group or move a tab into an existing group; tabs already in one also get a remove action. Tabs
+can be dragged onto a group header to join it. The header shows the group colour and member
+count, and clicking it collapses or expands the member tabs. Group definitions (name, colour and
+collapsed state) live in the profile's Tabs preferences, while each restored session tab stores
+its `groupId`, so the association returns with the saved session. Both horizontal and vertical
+tab layouts implement the same group model.
+
 **Workspace modes.** DevLens is either a clean browser or a developer workspace, and the
 switch is enforced rather than drawn: see [Modes](#modes) and
 [Profiles](#profiles).
 
+**Editable hotkeys.** `devlens:settings/hotkeys` records new chords directly from the
+keyboard, rejects conflicts with another action, and can reset one binding or all of them.
+System and developer actions are grouped separately, and the bindings are stored per profile.
+The same resolver handles shortcuts while the shell or a guest page has focus.
+
 ## Modes
 
-The toolbar carries a two-state switcher (`Cmd/Ctrl+Shift+D` toggles it) and the status bar
-names the active mode. The table in `src/shared/mode.ts` is the single source of truth: the
-main process uses it to decide what it enforces, the renderer to decide what it offers.
+The toolbar carries a two-state switcher. In Dev Mode, `Cmd/Ctrl+Shift+D` returns to Normal
+Mode; the visible switcher is the deliberate way into Dev Mode from a Normal Mode session.
+The status bar names the active mode. The table in `src/shared/mode.ts` is the single source
+of truth: the main process uses it to decide what it enforces, and the renderer uses it to
+decide what it offers.
 
 | | Normal Mode (Max Privacy & Immersion) | Dev Mode (Weaponised Workspace) |
 | --- | --- | --- |
@@ -181,7 +239,7 @@ main process uses it to decide what it enforces, the renderer to decide what it 
 | Toolbar | Navigation, omnibox, profiles, dashboard | Adds scroll sync, "Open in editor", sidebar toggle |
 | Dock | The everyday four: AI assistant, bookmarks, history, settings | Expands to the whole toolset below |
 | Panels | Everyday ones only: AI assistant, bookmarks, history, settings | Everything, including the developer tools |
-| Panel shortcuts | `Ctrl+Shift+C/I/R/A` do nothing, `>sec` and friends are refused with a reason | They open the matching panel |
+| Hotkeys | System and privacy bindings work normally; invoking an Elements, Console, Network or Sidebar developer binding explicitly requests Dev Mode | Default developer chords are available in the workspace and every binding can be customized |
 | Capture | Off in the main process: no console messages, no request records, no failure log | Full capture, rules, hold/resume, repeater |
 | Rules | Suspended, even when rules exist and are enabled | Applied |
 | Authoring | The guest refuses design mode and the DOM finder itself | `insertCSS`, design mode and `& selector` work |
@@ -193,9 +251,10 @@ The indicator is deliberately asymmetric: normal mode is a muted shield and the 
 rail. Panels are hidden in normal mode, but the enforcement that matters happens in the main
 process and in the guest's own bridge - hiding a panel is presentation, not security.
 
-### Normal mode has no triggers at all
+### Normal mode surface and boundaries
 
-Not a hidden button, not a gesture, not a keypress:
+Normal mode removes the developer *surface* and keeps monitoring off until the operator changes
+mode. It does not mount hidden panels or expose page-controlled paths into Dev Mode:
 
 - The dock offers the everyday four and nothing else - the list comes from `DOCK_TOOLS` in
   `src/shared/mode.ts`, so a developer tool is not hidden by CSS in normal mode, it is not in the
@@ -207,17 +266,18 @@ Not a hidden button, not a gesture, not a keypress:
   normal mode, so the omnibox commands (`>design`, `>intercept`) are refused with a reason
   rather than opening anything. `>sec` and `>defense` are the deliberate exception: they
   summon the defense overlay below, which is privacy rather than monitoring.
-- Developer shortcuts - `Ctrl/Cmd+Shift+I/C/R/A/D/J/K` and `F12` - are ignored outright. That
-  includes the mode shortcut: leaving normal mode is a deliberate act on the visible mode
-  switcher, which keeps a single keypress from ever revealing the developer area. The defense
-  overlay has its own shortcut - `Ctrl/Cmd+Shift+H` - which opens nothing but the panel below.
+- Configurable developer hotkeys are explicit commands. The default Elements, Console, Network
+  and Sidebar chords switch to Dev Mode before opening their target; Ghost and WImH work without
+  exposing a monitoring panel. The `Ctrl/Cmd+Shift+D` developer shortcut and page guest cannot
+  switch modes by themselves. To keep a Normal Mode session free of accidental mode changes,
+  use the profile's Hotkeys page to avoid or rebind developer chords.
 - Electron's own menu carries the DevTools accelerator, so normal mode runs with an
   Edit + Window menu and gets the View menu back in dev mode.
 - The status bar drops the workspace path, the capture counters and the DevTools button.
-- The start page drops the monitoring counters, the workspace list with its editor hand-off
-  and the developer prefix cheat sheet. Recent pages, local quick bookmarks and the browser
-  prefixes (`@`, `#`, `*`, `:port`, `:clear-cache`, `:sandbox`, `:wimh`) stay, because those
-  are browsing and privacy, not monitoring.
+- The start page drops the monitoring counters, the workspace list and its editor hand-off.
+  Recent pages, local quick bookmarks and browser prefixes (`@`, `#`, `*`, `:port`,
+  `:clear-cache`, `:sandbox`, `:wimh`) stay because they are browsing and privacy features,
+  not monitoring.
 
 ## The dock
 
@@ -227,7 +287,13 @@ answer comes from, so a tool cannot appear in the rail unless its mode allows it
 
 | Every mode | Dev mode only | Pinned |
 | --- | --- | --- |
-| AI assistant, Bookmarks, History | Console & Network, Interceptor & Repeater, Local dev servers, Device viewport (RWD), Live design & CSS, Cookies & storage, Recon & report, Extreme defense mode | Settings |
+| AI assistant, Bookmarks, History | Elements, Console, Network, Local dev servers, Device viewport (RWD), Live design & CSS, Application, Recon & report, Extreme defense mode | Settings |
+
+The Console, Elements and Network tools inspect the active viewport's guest rather than the
+DevLens shell. Elements covers DOM and CSS, Console covers logs and JavaScript evaluation, and
+Network combines traffic capture with interception and replay. Application covers session and
+document storage. Keeping those surfaces separate makes their target explicit and avoids one
+long panel that changes meaning according to which segment was last selected.
 
 Clicking a tool opens its panel beside the rail; clicking the one that is already showing closes
 it again, and the panel is resizable by dragging its outer edge. Switching modes re-filters the
@@ -244,14 +310,27 @@ corner of the canvas, so reading an answer never means giving up the frame you w
 The ✨ tool opens **the provider's own chat, embedded and nothing else** - Google Gemini, DeepSeek,
 ChatGPT or Anthropic Claude, chosen from the header dropdown. There is no built-in model and no
 second transcript: the conversation, the account and the model choice are the official web UI's,
-and DevLens contributes exactly two things.
+and DevLens contributes exactly two in-panel capabilities.
+
+Google account authentication is the exception. Google deliberately rejects OAuth in embedded
+Chromium/Electron webviews, including a separate Electron `BrowserWindow`; trying to disguise the
+browser fingerprint would be both unreliable and inappropriate. The panel states this directly
+and `Open in browser` hands Gemini to the operating system's default browser. That browser's
+encrypted cookie store cannot be copied back into DevLens's isolated partition, so Google account
+sign-in remains an external flow rather than an in-panel session.
+
+The same boundary applies outside the AI panel: guest navigation or `window.open` to Google's
+account hosts is denied inside Electron and handed to an installed Chrome, Edge, Firefox or Brave
+executable. On Windows DevLens resolves those executables directly instead of calling the default
+handler, because DevLens itself may be the default browser and would otherwise reopen the same
+embedded page.
 
 1. **Isolation.** Each provider gets its own persistent partition
    (`persist:devlens-ai-<profile>-<provider>`), so a login to one cannot see another, none of them
    can see the browsing profile's session, and the choice of provider is stored *per profile* -
    the assistant someone opened in "Work" is not the one they opened in "Personal".
 2. **"Summarise page".** One action in the header. It composes a prompt from the page in front,
-   its title and the captured context, copies it to the clipboard, and then tries to *type it into
+   its title and any captured context, copies it to the clipboard, and then tries to *type it into
    the site's own composer* - the largest editable field on the page, set through the native
    setter so the site's framework notices. Nothing is sent: the operator reads it and presses
    their own Enter. When there is no composer to find - a site that has not finished loading, or
@@ -310,6 +389,13 @@ open one.
 | Nothing written down | Visits are refused by `history.ts` itself (not only by the call site), so they never reach this profile's history or its omnibox suggestions |
 | Gone when it is gone | Closing the tab clears storage, cache, auth and DNS for its partition and drops the registry entry: what it held in memory does not come back in the next private tab |
 
+Private and WImH pages are more than a badge. Their landing surface explains the active
+combination (`Private`, `WImH`, `Private + WImH` or `Ghost`) and links to local guide pages at
+`devlens:private/how`, `devlens:private/who`, `devlens:wimh/how`, `devlens:wimh/who` and
+`devlens:wimh/whatnhow`. The guides describe what DevLens enforces, what is erased, and who can
+still observe activity through the network, operating system, device or a signed-in service.
+Opening a guide creates an internal tab; it does not start a remote help site.
+
 The strip marks the chip with a mask badge on its own violet hairline, the toolbar shows a
 *Private (Max Protection)* pill with the tab's counters, and the protection badge reports
 `Extreme Defense (this tab)` with the dial locked and the reason in the menu - a level a later
@@ -317,6 +403,15 @@ click could quietly retract would not be worth claiming. Two private tabs never 
 and a private tab is a privacy tool rather than a developer one: it opens in normal mode without
 unlocking anything. Standard tabs in the same window are untouched - same partition, same level,
 same history.
+
+Ghost, private and WImH sessions also receive a fingerprint profile that remains stable for that
+session and rotates when the mode is entered again. The guest preload randomizes reported CPU
+cores, device memory, screen dimensions and language preferences; adds bounded deterministic
+noise to small canvas reads, WebGL pixel reads and GPU identity; and perturbs offline audio and
+analyser frequency output. Normal browsing is untouched. These measures reduce cross-session
+linkability but cannot guarantee anonymity, and DevLens deliberately does not hide `webdriver`,
+CDP or other automation indicators because that would weaken the distinction between a user
+browser and an automated client.
 
 ## Profiles
 
@@ -330,6 +425,12 @@ toolbar's profile menu switches identity without leaving the window.
 The gate is a once-per-launch surface. Once an identity has been chosen it is not replayed by a
 renderer reload, and `Ctrl/Cmd+R` or `F5` is routed to the active web page/viewports rather than
 the Electron shell.
+
+Each profile can be customized from Identity settings without switching away from the current
+one. The editor updates its name and avatar together with the content theme, workspace finish,
+UI density, interface and code fonts, default zoom and primary language. Changes are written to
+that profile's own preference file; when the edited profile is active, the shell applies the
+new appearance and language settings immediately.
 
 Isolation is the point, and it is enforced in three places rather than one:
 
@@ -360,7 +461,11 @@ privacy preference is itself something written to disk.
 | `@bi` `<query>` | Search Bing |
 | `@w` `<query>` | Search Wikipedia (`en.wikipedia.org/wiki/Special:Search`) |
 | `@p` `<query>` | Search Perplexity |
-| `#yt` / `#gh` / `#notion` / `#r` / `#amz` / `#cve` | Open the stored direct site shortcut. Text after the trigger is ignored |
+| `#g` / `#yt` / `#gh` / `#notion` / `#r` / `#amz` / `#cve` | Text after the trigger uses that site's search endpoint (`#yt cats`, `#gh react`, `#g PKCE`); an empty query opens the site only on the second Enter |
+
+Searchable shortcuts use a two-step keyboard flow. Typing `#yt` and pressing Enter arms the
+shortcut by adding the separating space and keeps focus in the field. Type the query and press
+Enter to search YouTube; if the query is still empty, the second Enter opens YouTube's home page.
 | `* <url or query>` | Enter the ghost session (isolated, in-memory, trackers blocked) and open the target. Bare `*` toggles the session on the current page |
 | `>sec` / `>design` / `>intercept` / `>defense` | Switch the sidebar to Security & recon / Live design & CSS / HTTP interceptor / extreme defense (`>security`, `>recon`, `>css`, `>http`, `>wimh` also work) |
 | `& <selector>` | Highlight matching elements in the active viewport, report the count and the nearest React component name |
@@ -371,7 +476,8 @@ privacy preference is itself something written to disk.
 | `:wimh` (`:defense`) | Toggle the WImH defense overlay, in both modes |
 | `:profile` (`:user`) | Open the "who is using DevLens?" identity screen |
 
-**Prefix marks in the leading slot.** At rest, a loaded page shows its own favicon. An empty
+**Prefix marks in the leading slot.** At rest, a loaded page shows its connection shield:
+`ShieldCheck` for HTTPS and `ShieldX` with an amber treatment for an insecure page. An empty
 field, a focused field, a cleared field, and any typed search all show the profile's default
 engine mark instead; a custom default engine uses its fetched site icon. While a token is still
 being typed the slot shows the raw prefix character (`@`), and a recognised token draws its brand
@@ -634,19 +740,26 @@ existing Settings tab rather than creating another form.
 | `devlens:settings/appearance` | Content theme, workspace theme, Browser Icons, Fonts and density |
 | `devlens:settings/themes` | Extended DevLens workspace theme gallery |
 | `devlens:settings/tabs` | Tab layout, interaction, containers, media and hardware |
+| `devlens:settings/hotkeys` | Browser, tool and session keyboard bindings |
 | `devlens:settings/downloads` | Download location, content handlers and fallback behavior |
 | `devlens:settings/languages` | Interface, web content, translation and spell check |
 | `devlens:settings/developer` | AI provider and installed editor hand-off |
 | `devlens:settings/identity` | Profile and startup identity prompt |
 | `devlens:settings/about` | Version, updates, diagnostics, license and community |
+| `devlens:settings/team` | DevLens Teams: RayCheung and Lensy |
 | `devlens:changelog` | Offline release notes for the installed build |
 
 `devlens:settings` redirects to the home category. `devlens:settings/omnibox` is retained as
 an alias for the consolidated Omnibox category. Internal routes do not render the omnibox
 search/action switcher; it returns on ordinary web pages.
 
-The sidebar order is Launchpad, Omnibox, Privacy, Appearance, Tabs, Downloads, Languages,
-Developer workspace, Identity, About. The navigation and content panes scroll independently.
+The sidebar order is Launchpad, Omnibox, Privacy, Appearance, Tabs, Hotkeys, Downloads,
+Languages, Developer workspace, Identity, About and About DevLens Teams. The navigation and
+content panes scroll independently.
+
+The team page introduces RayCheung as creator and developer, Lensy as the mascot and privacy
+companion, and the design philosophy shared by both: calm by default, power on demand,
+inspectable evidence, enforced local-first privacy, honest limits and craft over clutter.
 
 ### Preference store
 
@@ -662,6 +775,7 @@ UI preferences are stored per profile in
 - `privacy`
 - `appearance`
 - `tabs`
+- `hotkeys`
 - `languages`
 - `developer`
 - `downloads`
@@ -682,15 +796,21 @@ choices that should survive a restart are written through `preferencesSet`.
   Lensy (the DevLens mascot).
 - Widget switches for clocks, developer spotlight, quick snippets, system health, weather and
   the focus timer.
-- Recent/bookmark/download activity shelves.
 - Six built-in theme-aware wallpapers (including Lensy Night) plus a bounded custom-image data
   URL, with a shared dim control.
+- Quick-tile visibility and a 1-4 row limit, plus a top-level switch for the widget shelf.
 
 Wallpaper cards use a visible pressed/selected state and the chosen artwork is tinted by the active
 workspace theme (DevLens teal, Midnight indigo, Ocean cyan, Ember amber). Six built-in SVGs plus a
 custom-image option share the same dim and first-paint behavior.
 
 The last non-private tab set is written to the profile store and restored when enabled.
+
+The **Customize** control on the Launchpad opens Launchpad Studio without navigating away from
+the page. It provides the workspace finish and content-theme choices, wallpaper visibility and
+selection, quick-tile rows and widget-shelf visibility, with links to the full Appearance and
+Launchpad sections. The same preferences are available in Settings, but the common adjustments
+no longer require leaving the start surface.
 
 Default browser now has its own Launchpad card. It guides first-time setup, then switches to a
 `Nice choice.` success state with three local-first/developer advantages and the DevLens mascot,
@@ -748,8 +868,31 @@ the card stays in standby until one is configured rather than pretending to be c
 Horizontal and Vertical Tabs are real layouts. The active behaviors currently wired to the
 shell include immediate/background opening, opening external-page tabs beside the current tab,
 and MRU-based `Ctrl+Tab`. Environment containers, hover/taskbar previews, smart page cursor,
-link preview, custom hotkeys, PiP/DRM and hardware acceleration are persisted controls for
-their corresponding runtime integrations.
+link preview, PiP/DRM and hardware acceleration are persisted controls for their corresponding
+runtime integrations. Keyboard bindings live in the dedicated Hotkeys category below.
+
+### Hotkeys
+
+`devlens:settings/hotkeys` is the editable keymap. Click a binding, press the replacement chord,
+and DevLens records it immediately; Escape cancels recording. A chord already assigned to
+another action is rejected with that action's name. Each row can be reset independently, and
+`Reset all` restores the defaults. The keymap is stored as `hotkeys.bindings` in the profile's
+preference file.
+
+The system group covers New tab, Close tab, Reload, Find, Settings, DevLens shell Developer
+Tools and New private tab. The developer group covers Elements, Console, Network, Sidebar,
+Ghost and WImH:
+
+| Action | Default |
+| --- | --- |
+| New tab / close tab / reload / find | `Ctrl/Cmd+T`, `Ctrl/Cmd+W`, `Ctrl/Cmd+R`, `Ctrl/Cmd+F` |
+| Settings / shell Developer Tools | `Ctrl/Cmd+,`, `F12` |
+| New private tab / Ghost / WImH | `Ctrl/Cmd+Shift+P`, `Ctrl/Cmd+Shift+G`, `Ctrl/Cmd+Shift+H` |
+| Elements / Console / Network / Sidebar | `Ctrl/Cmd+Shift+I`, `Ctrl/Cmd+Shift+J`, `Ctrl/Cmd+Shift+E`, `Ctrl/Cmd+Shift+B` |
+
+`Ctrl` is the displayed modifier on every platform and also matches Command on macOS. The
+hotkey resolver runs in both the shell and the guest instrumentation path, so a page cannot
+swallow a configured DevLens binding.
 
 ### Languages and localization
 
@@ -770,14 +913,14 @@ label, and supports arrow keys, Home/End, Enter, Escape and pointer selection.
 A switch disables the hand-off as a unit: the whole editor control becomes inactive and greyed
 out, the toolbar action disappears, and the main process refuses direct IPC requests as well.
 
-The Developer workspace category placement is intentionally after Downloads and Languages. The
-toolbar label follows the selected editor, and the choice is stored in the profile's `developer`
-preference group.
+The Developer workspace category placement is intentionally after Hotkeys, Downloads and
+Languages. The toolbar label follows the selected editor, and the choice is stored in the
+profile's `developer` preference group.
 
 ## WImH - extreme defense mode
 
 Built for a host you no longer trust: the sidebar's shield tool (or `>defense`) toggles a mode
-that runs both viewports on their own RAM-only partition and layers four defenses on top. The
+that runs both viewports on their own RAM-only partition and layers five defenses on top. The
 panel reports what each one has actually done, and states the limits out loud.
 
 | Defense | What it enforces |
@@ -786,6 +929,7 @@ panel reports what each one has actually done, and states the limits out loud.
 | Memory hygiene | Credential-shaped header values, query parameters and request bodies are replaced in the capture before they can reach the UI, the recon report or an AI prompt. The originals go into Buffers, never strings, and are zeroed on a TTL or with `Scrub now`. |
 | Window protection | `setContentProtection(true)` asks the OS to exclude the DevLens windows from screen capture and remote-desktop mirroring, and display-media requests from any guest are refused. |
 | Clipboard sentinel | Every write DevLens performs is classified; detected credentials are watched and purged after a configurable timeout (5s to 5m), a secret that appears on the clipboard from elsewhere is purged too, and pasting a detected credential into DevLens fields is refused while the mode is on. |
+| Threat detection | Mouse entropy analysis, `isTrusted` validation, and screen-capture attempt tracking. When synthetic input or remote-control patterns are detected, the Protective Shield overlay locks the surface and warns "DevLens is protecting you" with a counted-down dismiss button. The preload throttles mouse samples to 16 ms and feeds them to a rolling 60-sample entropy analyzer in the main process. |
 
 Leaving the mode wipes session storage, cache, auth, scratch buffers and the clipboard, then
 releases the window protection. What it cannot do: a host with kernel or debugger access can
@@ -841,13 +985,17 @@ the main process as a data URL.
 | Checklist | A local task list: add, tick, remove, clear the done ones. Stored with `localStorage` under `devlens.checklist.<profileId>`, because the shell's own storage is shared between profiles - a task written while using "Work" should not be waiting in "Personal" |
 | Local servers | Probes the ports dev tooling actually binds to (Vite, Next, CRA, Angular, Storybook, Jupyter, plus the usual Docker-published databases and brokers), reads the `Server` header and the page title, and lists every one that answered. Servers pinned in `ntp.servers` come first. Clicking a card opens it in both viewports |
 | Workspaces | Dev mode only. An MRU list with the package name and the framework that owns the dev server; add a folder, set any entry active, and click-to-source plus "Open in editor" resolve inside it immediately |
-| Session activity | Dev mode only: requests captured, failures, console errors and blocked trackers for the session you just had |
-| Omni-prefix cheat sheet | Generated from the same tables the parser uses, so it cannot drift. Clicking an entry fills the field with that prefix. Normal mode advertises only the entries it offers |
 
 The grid is measured with container queries rather than window breakpoints: the pane narrows when
 the developer sidebar opens, and the cards answer to the pane. Normal mode drops the developer
-cards entirely and keeps the local-first utilities. Widget visibility, activity shelves and the
-Launchpad wallpaper are configured under `devlens:settings/home`.
+cards entirely and keeps the local-first utilities. The shortcut grid and widget shelf can be
+hidden from Launchpad Studio, while individual widget choices and the Launchpad wallpaper are
+configured under `devlens:settings/home`.
+
+Widgets stay in one horizontal, paged shelf rather than stacking into a vertically scrolling
+page. A wide window shows four cards at a time, a medium pane shows three and a narrow pane
+shows two; the arrows and page count reveal the remaining widgets without changing the page
+height.
 
 ## Project Nova styling
 
@@ -865,8 +1013,8 @@ readable. `MARK_BOX` stays a fixed square at every width.
 
 | Token | Normal Mode | Dev Mode |
 | --- | --- | --- |
-| `--devlens-accent` | muted slate | lime |
-| `--devlens-glow` | transparent (no bloom) | soft lime |
+| `--devlens-accent` | workspace accent, muted toward slate | workspace accent at full strength |
+| `--devlens-glow` | transparent (no bloom) | workspace bloom |
 | `--devlens-glass`, `--devlens-hairline`, `--devlens-tab`, `--devlens-shadow` | shared, then overridden by the selected theme | shared, then overridden by the selected theme |
 
 Component classes read those tokens - `nova-glass` for the toolbar, sidebar rail and status bar,
@@ -892,6 +1040,13 @@ whole shell without touching a single security gate.
     "apiKeyEnv": "OPENAI_API_KEY",
     "temperature": 0.2,
     "maxTokens": 900
+  },
+  "oauth": {
+    "google": {
+      "clientId": "",
+      "redirectUri": "devlens://auth-callback",
+      "scopes": ["openid", "email", "profile"]
+    }
   },
   "interceptor": { "enabled": true, "pauseTimeoutMs": 20000, "maxPaused": 25, "bufferSize": 500 },
   "report": { "outputDir": null },
@@ -925,13 +1080,28 @@ URL according to that preference.
   - `ntp.openOnStart` - legacy bootstrap hint; profile Launchpad/Homepage targets take
     precedence for the actual startup surface.
   - `mode.default` - `dev` (default) or `normal` to start as a clean browser (`DEVLENS_MODE`).
+  - `oauth.google.clientId` - the public OAuth client id used by the system-browser PKCE flow
+    (`DEVLENS_GOOGLE_CLIENT_ID`). It is intentionally blank in the source distribution.
+  - `oauth.google.redirectUri` - defaults to `devlens://auth-callback`
+    (`DEVLENS_GOOGLE_REDIRECT_URI`) and must exactly match the redirect registered in Google
+    Cloud Console.
+  - `oauth.google.scopes` - requested scopes; the default requests only `openid`, `email` and
+    `profile`.
 - Blank values are treated as "not configured", so the defaults still apply.
 - Environment overrides for scripted runs: `DEVLENS_HOME_URL`, `DEVLENS_WORKSPACE_ROOT`,
   `DEVLENS_IDE_SCHEME`, `DEVLENS_AI_PROVIDER`, `DEVLENS_AI_MODEL`, `DEVLENS_AI_BASE_URL`,
     `DEVLENS_AI_API_KEY`, `DEVLENS_INTERCEPT`, `DEVLENS_REPORT_DIR`, `DEVLENS_SEARCH_ENGINE`,
     `DEVLENS_GHOST_BLOCK_TRACKERS`, `DEVLENS_WIMH`, `DEVLENS_CLIPBOARD_TTL_MS`,
-    `DEVLENS_NTP_ON_START`.
+    `DEVLENS_NTP_ON_START`, `DEVLENS_GOOGLE_CLIENT_ID`, `DEVLENS_GOOGLE_REDIRECT_URI`.
     Note that the automated suites assume the dev default.
+
+The Google flow is a public-client Authorization Code + PKCE handshake. DevLens generates a
+S256 verifier and a one-time `state`, opens authorization in an installed browser, registers the
+`devlens:` protocol for one app instance, and exchanges the returned code in the main process.
+Access and refresh tokens are encrypted with Electron `safeStorage` under
+`userData/oauth/google-token.bin`; when OS encryption is unavailable, the token remains in memory
+for the current run instead of being written in plaintext. The Renderer receives only account
+metadata and status, never the token.
 
 <p align="right">
   <img src="docs/assets/lensy-hanging.svg" width="125" alt="Lensy hanging upside down above the AI provider documentation" />
@@ -959,6 +1129,10 @@ src/
     index.ts     app lifecycle + IPC handler registration
     window.ts    shell window, navigation hardening, will-attach-webview policy
     guests.ts    console and navigation instrumentation per guest
+    guest-debugger.ts  scoped CDP attach/send/event bridge for registered guests
+    google-oauth.ts  PKCE flow, deep-link callback and encrypted Google token store
+    external-browser.ts  launches an installed browser instead of the default handler
+    fingerprint.ts  per-session profiles for Ghost, Private and WImH randomization
     interceptor.ts  session webRequest hooks: capture, rules, hold/resume/drop, repeater
     ai.ts        provider abstraction with streamed completions (mock / ollama / openai)
     sessions.ts  session profiles: standard, ghost (in-memory + tracker blocking), sandbox
@@ -966,6 +1140,7 @@ src/
     bookmarks.ts locally saved pages, ranked together with history in the omnibox
     storage.ts   per-profile data directory: userData/profiles/<profileId>
     wimh.ts      extreme defense: RAM-only enforcement, scrubber, sentinel, window protection
+    threat-detection.ts  entropy-based mouse analyzer + screen-capture detection for WImH mode
     mode.ts      workspace mode truth: what normal vs dev actually enforces
     protection.ts protection dial: tracking tiers, header hardening, RAM-only switching
     browsing-data.ts profile/cache clearing, retention schedules and pinned-only exit cleanup
@@ -987,9 +1162,11 @@ src/
     src/components/                Toolbar, ViewportFrame, StatusBar, panels
     src/components/Omnibox.tsx     suggestion dropdown + keyboard contract
     src/components/DefenseOverlay.tsx  the on-demand WImH panel normal mode still offers
+    src/components/ProtectiveShield.tsx  full-surface threat-protection overlay with Lensy mascot
     src/components/ProtectionMenu.tsx  the security badge and the level dropdown
     src/components/SettingsPage.tsx    categorized Settings shell and category panels
     src/components/AboutSettings.tsx   About, diagnostics, updates, license and Lensy
+    src/components/AboutDevLensTeams.tsx profiles RayCheung and Lensy
     src/components/AppIconPicker.tsx   Browser Icon gallery and searchable collections
     src/components/BrowsingDataSettings.tsx browsing cleanup, policies and expiration UI
     src/components/ChangelogPage.tsx   offline bundled release notes
@@ -1004,10 +1181,18 @@ src/
     src/components/PrefixIcons.tsx     normalised inline brand marks for the omnibox chips
     src/components/ModeSwitcher.tsx / ProfileSwitcher.tsx   mode + identity controls
     src/components/Sidebar.tsx     icon rail + draggable column, hosts every panel
+    src/components/InspectorPanel.tsx  live DOM, styles, computed properties and box model
+    src/components/ConsolePanel.tsx    filtered log stream and JavaScript REPL
     src/components/InterceptorPanel.tsx  capture, held queue, rules
     src/components/RepeaterPanel.tsx     replay with a custom payload
+    src/components/StoragePanel.tsx      cookies, web storage and Cache Storage editing
     src/components/DesignPanel.tsx       design mode + CSS editor
     src/components/ReconPanel.tsx        inventory, observations, export
+    src/components/HotkeySettings.tsx    shortcut recorder, conflict check and reset controls
+    src/components/ProfileCustomizationModal.tsx  profile identity + appearance editor
+    src/components/LaunchpadCustomizePanel.tsx     quick Launchpad Studio controls
+    src/components/PrivateSessionLanding.tsx       Private/WImH/Ghost status surface
+    src/components/PrivateProtectionPage.tsx       local protection and boundary guides
     src/hooks/                     log streams and interceptor state -> React state
   shared/      Contracts imported by all three targets
     ipc.ts       channel names
@@ -1028,7 +1213,8 @@ src/
     ide.ts       editor presets and installed-editor contracts
     wallpapers.ts six built-in Launchpad wallpaper SVGs plus custom resolution
     developer-quotes.ts 100 Spotlight quotes and the DevLens Team signature
-    tabs.ts      tab layout, behavior, containers, hotkeys and media preferences
+    tabs.ts      tab layout, behavior, containers and media preferences
+    hotkeys.ts   actions, defaults, parsing, conflict detection and event matching
     languages.ts interface, web-content, translation and spell-check preferences
     mode.ts      the capability table both processes obey
     clipboard.ts credential classifier shared by the sentinel and the paste guard
@@ -1040,6 +1226,9 @@ src/
 | --- | --- | --- |
 | `devlens:bootstrap` | renderer -> main (invoke) | guest preload URL, partition, home URL, IDE target |
 | `devlens:guest:register` | renderer -> main (send) | binds a guest `webContents` id to a viewport |
+| `devlens:guest:debugger:send` / `debugger:detach` | renderer -> main (invoke) | sends an allow-listed CDP command to a registered guest or detaches it |
+| `devlens:guest:debugger:event` | main -> renderer | batched CDP events from the active guest |
+| `devlens:hotkey:triggered` | main -> renderer | forwards a configured binding caught while a guest owns focus |
 | `devlens:ide:open` | renderer -> main (invoke) | opens a file/line in the configured editor |
 | `devlens:log:console` | main -> renderer | console message captured from a guest |
 | `devlens:log:network` | main -> renderer | failed/non-2xx request captured from a guest |
@@ -1073,14 +1262,20 @@ src/
 | `devlens:ghost:enter` / `ghost:exit` / `ghost:state` | renderer -> main (invoke) | manage the isolated session |
 | `devlens:ghost:changed` | main -> renderer | ghost counters (trackers blocked) |
 | `devlens:session:clear-data` | renderer -> main (invoke) | `:clear-cache` for a profile |
+| `devlens:session:clear-cache` | renderer -> main (invoke) | clears only the active partition's HTTP cache |
 | `devlens:sandbox:open` | renderer -> main (invoke) | `:sandbox` window |
 | `devlens:wimh:state` / `set-enabled` / `set-clipboard-ttl` / `scrub` | renderer -> main (invoke) | extreme defense control and state |
 | `devlens:wimh:check-clipboard` / `note-paste-blocked` | renderer -> main (invoke) | paste sentinel verdicts |
 | `devlens:wimh:changed` | main -> renderer | defense state and event feed |
 | `devlens:protection:get-state` / `protection:set-level` | renderer -> main (invoke) | read or switch the protection level |
+| `devlens:threat:state` / `threat:dismiss` | renderer -> main | extreme-protection threat state and shield dismissal |
+| `devlens:threat:alert` / `threat:changed` | main -> renderer | threat alert activates the ProtectiveShield; changed pushes the cleared state after dismissal |
+| `devlens:threat:mouse-sample` / `threat:untrusted-input` / `threat:screen-capture` | renderer -> main | input entropy samples and anomaly reports |
 | `devlens:protection:set-site-allowed` | renderer -> main (invoke) | pause/resume cancellation for one site, this session |
 | `devlens:protection:changed` | main -> renderer | the level or its counters changed |
 | `devlens:preferences:state` / `preferences:set` | renderer -> main (invoke) | read or persist the active profile's Settings groups |
+| `devlens:profiles:update` | renderer -> main (invoke) | rename a profile or change its avatar without switching |
+| `devlens:profiles:preferences:get` / `set` | renderer -> main (invoke) | read or update another profile's preferences while it stays inactive |
 | `devlens:launchpad:system-state` / `set-default-browser` / `set-launch-at-login` | renderer -> main (invoke) | OS integration used by Launchpad |
 | `devlens:launchpad:pick-wallpaper` / `save-session` / `weather` | renderer -> main (invoke) | wallpaper picker, restorable tabs and weather lookup |
 | `devlens:privacy:apply-network` / `disk-usage` | renderer -> main (invoke) | apply DoH and measure profile disk usage |
@@ -1109,6 +1304,11 @@ src/
   preload is a self-contained CommonJS bundle (sandboxed preloads cannot `require` siblings).
 - `will-attach-webview` re-asserts the guest security settings in the main process and refuses
   any non-http(s)/file source. Guest channels stay namespaced to `devlens:` and carry data only.
+- The embedded debugger accepts commands only for registered guests in Dev Mode. It allows the
+  `DOM`, `CSS`, `Runtime`, `Network`, `Storage`, `Page`, `Overlay`, `Log`, `Security` and
+  `Emulation` CDP domains, and detaches when the inspector closes or the guest is destroyed.
+  Chromium permits one debugger connection per page, so an external DevTools window must be
+  closed before the embedded inspector can attach.
 - The interceptor only ever sees guest traffic: the shell's own requests are ignored and never
   rewritten. A failure inside the interception layer logs and lets the request through, so a
   rule bug can neither hang a page nor take the app down.

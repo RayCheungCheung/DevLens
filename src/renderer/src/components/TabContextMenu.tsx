@@ -4,6 +4,8 @@ import {
   AppWindow,
   Bookmark,
   ChevronRight,
+  Circle,
+  Columns2,
   Copy,
   CornerUpLeft,
   Link2,
@@ -12,20 +14,24 @@ import {
   Pin,
   Plus,
   RotateCw,
+  Rows2,
+  
   Sparkles,
   Trash2,
   Volume2,
   VolumeX
 } from 'lucide-react'
+import type { TabGroup } from '@shared/tabs'
 
 /**
  * The tab chip's context menu.
  *
  * Every row here is one the shell can carry out for *this* tab, decided before the menu renders.
  * There are no greyed-out entries and no reasons: an option that cannot act is not drawn at all.
- * The rows this build has no backend for (tab groups, split view, cross-device hand-off, OS share
- * targets) are gone rather than disabled, and the contextual ones - unload, bookmark, copy link,
- * the container sessions, reopen, the batch closes - exist only when their context exists.
+ * The rows this build has no backend for (tab groups, cross-device hand-off, OS share targets)
+ * are gone rather than disabled, and the contextual ones - unload, bookmark, copy link, split
+ * view, the container sessions, reopen and the batch closes - exist only when their context
+ * exists.
  *
  * The context comes in as a prop rather than being sniffed here: the tab strip knows the index,
  * the count and whether there are duplicates, and a menu that guessed would be a menu with a row
@@ -45,6 +51,11 @@ export type TabMenuAction =
   | 'move-right'
   | 'move-first'
   | 'move-last'
+  | 'split-side-by-side'
+  | 'split-stacked'
+  | 'group-assign'
+  | 'group-remove'
+  | 'group-new'
   | 'copy-link'
   | 'container-standard'
   | 'container-ghost'
@@ -55,12 +66,21 @@ export type TabMenuAction =
   | 'close-left'
   | 'close-duplicates'
   | 'reopen'
+  | 'select-all'
 
 interface TabContextMenuProps {
   /** Position in viewport coordinates, straight from the right-click. */
   x: number
   y: number
-  tab: { id: string; title: string; url: string | null; muted?: boolean; pinned?: boolean; unloaded?: boolean }
+  tab: {
+    id: string
+    title: string
+    url: string | null
+    muted?: boolean
+    pinned?: boolean
+    unloaded?: boolean
+    groupId?: string
+  }
   /** True when there is something on the closed stack to bring back. */
   canReopen: boolean
   /** Where this tab sits in the strip and what else is in it, for the batch rows. */
@@ -69,9 +89,17 @@ interface TabContextMenuProps {
     total: number
     /** True when another open tab has this tab's URL. */
     hasDuplicates: boolean
+    /** The adjacent tab that can share a split, if one exists. */
+    splitPartner?: { id: string; title: string }
+    /** Persistent groups offered by the Add to Group submenu. */
+    tabGroups?: TabGroup[]
   }
-  onAction: (action: TabMenuAction, tabId: string) => void
+  onAction: (action: TabMenuAction, tabId: string, groupId?: string) => void
   onClose: () => void
+  /** When provided, allows selecting all tabs (used in multi-select mode). */
+  onSelectAll?: () => void
+  /** True when the menu is in a context where Select All is relevant. */
+  multiSelectAvailable?: boolean
 }
 
 interface Row {
@@ -80,6 +108,9 @@ interface Row {
   icon: typeof Plus
   shortcut?: string
   separator?: boolean
+  checked?: boolean
+  groupId?: string
+  color?: string
 }
 
 export function TabContextMenu({
@@ -89,14 +120,14 @@ export function TabContextMenu({
   canReopen,
   context,
   onAction,
-  onClose
+  onClose,
 }: TabContextMenuProps) {
   const [submenu, setSubmenu] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
   useMenuDismiss({ ref, onClose })
 
-  const run = (action: TabMenuAction): void => {
-    onAction(action, tab.id)
+  const run = (row: Row): void => {
+    if (row.action) onAction(row.action, tab.id, row.groupId)
     onClose()
   }
 
@@ -106,6 +137,9 @@ export function TabContextMenu({
   const hasLeft = context.index > 0
   const hasRight = context.total > 0 && context.index < context.total - 1
   const hasOthers = context.total > 1
+  const canSplit = hasPage && !tab.unloaded && Boolean(context.splitPartner)
+  const canGroup = !tab.pinned && Array.isArray(context.tabGroups)
+  const currentGroup = context.tabGroups?.find((group) => group.id === tab.groupId)
 
   const groups: { id?: string; label?: string; rows: Row[] }[] = [
     {
@@ -157,6 +191,61 @@ export function TabContextMenu({
         ...(hasPage ? ([{ action: 'copy-link', label: 'Copy Link', icon: Link2 }] as Row[]) : [])
       ]
     },
+    ...(canSplit && context.splitPartner
+      ? [
+          {
+            id: 'split',
+            label: 'Split View',
+            rows: [
+              {
+                action: 'split-side-by-side' as const,
+                label: `Side by Side with ${context.splitPartner.title}`,
+                icon: Columns2
+              },
+              {
+                action: 'split-stacked' as const,
+                label: `Stacked with ${context.splitPartner.title}`,
+                icon: Rows2
+              }
+            ] as Row[]
+          }
+        ]
+      : []),
+    ...(canGroup
+      ? [
+          {
+            id: 'group',
+            label: 'Add to Group',
+            rows: [
+              ...(currentGroup
+                ? ([
+                    {
+                      action: 'group-remove',
+                      label: `Remove from ${currentGroup.name}`,
+                      icon: Circle
+                    }
+                  ] as Row[])
+                : []),
+              ...(context.tabGroups ?? []).map(
+                (group): Row => ({
+                  action: 'group-assign',
+                  label: group.name,
+                  icon: Circle,
+                  groupId: group.id,
+                  color: group.color,
+                  checked: group.id === tab.groupId
+                })
+              ),
+              {
+                action: 'group-new' as const,
+                label: 'New Group…',
+                icon: Plus,
+                separator: (context.tabGroups?.length ?? 0) > 0
+              }
+            ] as Row[]
+          }
+        ]
+      : []),
     {
       id: 'container',
       label: 'Open in New Container Tab',
@@ -256,7 +345,7 @@ function MenuRow({
 }: {
   row: Row
   nested?: boolean
-  onRun: (action: TabMenuAction) => void
+  onRun: (row: Row) => void
 }) {
   const Icon = row.icon
   return (
@@ -265,7 +354,7 @@ function MenuRow({
       role="menuitem"
       aria-label={row.label}
       data-testid={`tab-menu-${row.action ?? row.label}`}
-      onClick={() => row.action && onRun(row.action)}
+      onClick={() => row.action && onRun(row)}
       className={[
         'flex w-full items-center gap-2.5 py-1.5 text-left transition-colors',
         nested ? 'pl-6 pr-3' : 'px-3',
@@ -273,7 +362,11 @@ function MenuRow({
         'text-ink-200 hover:bg-white/[0.04]'
       ].join(' ')}
     >
-      <Icon size={13} className="shrink-0 text-ink-500" />
+      <Icon
+        size={13}
+        className="shrink-0"
+        style={row.color ? { color: row.color } : undefined}
+      />
       <span className="min-w-0 flex-1 truncate text-[11px]">{row.label}</span>
       {row.shortcut && <span className="shrink-0 font-mono text-[9px] text-ink-600">{row.shortcut}</span>}
     </button>

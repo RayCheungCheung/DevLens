@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { isAbsolute, normalize, relative, resolve } from 'node:path'
+import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 import { shell } from 'electron'
 import type { OpenInIdeRequest, OpenInIdeResult } from '../shared/types'
 import type { ResolvedConfig } from '../shared/config'
@@ -33,8 +33,9 @@ export async function openInIde(
     }
   }
 
-  const uri = buildEditorUri(scheme, target.filePath, target.line)
+  let uri: string | null = null
   try {
+    uri = buildEditorUri(scheme, target.filePath, target.line)
     await shell.openExternal(uri)
     return { ok: true, uri, resolvedPath: target.filePath, error: null }
   } catch (error) {
@@ -60,7 +61,8 @@ function resolveTarget(
     const absolute = isAbsolute(request.filePath)
       ? normalize(request.filePath)
       : resolve(workspaceRoot, request.filePath)
-    return { filePath: absolute, line: request.line ?? null }
+    const filePath = existingFileInWorkspace(absolute, workspaceRoot)
+    return filePath ? { filePath, line: normalizeLine(request.line) } : null
   }
 
   if (request.sourceUrl) {
@@ -90,7 +92,8 @@ function resolveSourceUrl(
 
   if (parsed.protocol === 'file:') {
     try {
-      return { filePath: normalize(fileURLToPath(parsed)), line }
+      const filePath = existingFileInWorkspace(normalize(fileURLToPath(parsed)), workspaceRoot)
+      return filePath ? { filePath, line: normalizeLine(line) } : null
     } catch {
       return null
     }
@@ -104,7 +107,12 @@ function resolveSourceUrl(
 
   if (!isLocalHost) return null
 
-  const relativePath = decodeURIComponent(parsed.pathname).replace(/^\/+/, '')
+  let relativePath = ''
+  try {
+    relativePath = decodeURIComponent(parsed.pathname).replace(/^\/+/, '')
+  } catch {
+    return null
+  }
 
   // Dev servers round-trip through directories: `/` or `/app/` serve `index.html`.
   const candidates = relativePath === '' || relativePath.endsWith('/')
@@ -113,17 +121,50 @@ function resolveSourceUrl(
 
   for (const candidatePath of candidates) {
     const candidate = resolve(workspaceRoot, candidatePath)
-    // Never let a source URL escape the workspace root.
-    if (relative(workspaceRoot, candidate).startsWith('..')) continue
-    if (existsSync(candidate)) return { filePath: candidate, line }
+    const filePath = existingFileInWorkspace(candidate, workspaceRoot)
+    if (filePath) return { filePath, line: normalizeLine(line) }
   }
 
   return null
 }
 
 function buildEditorUri(scheme: string, filePath: string, line: number | null): string {
-  const posixPath = filePath.replace(/\\/g, '/')
+  if (
+    !/^[a-z][a-z0-9+.-]*$/i.test(scheme) ||
+    /^(javascript|vbscript|data|file|http|https|devlens|shell|cmd|powershell|ms-msdt)$/i.test(scheme)
+  ) {
+    throw new Error('The configured editor URI scheme is invalid.')
+  }
+  const posixPath = filePath
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+    .join('/')
   const suffix = line && line > 0 ? `:${line}` : ''
   return `${scheme}://file/${posixPath}${suffix}`
+}
+
+/**
+ * Resolve symlinks and require the final file to remain under this workspace. This is
+ * intentionally applied to both direct paths and file URLs, so a logged source URL cannot
+ * turn click-to-source into a request to launch an arbitrary local file in an editor.
+ */
+function existingFileInWorkspace(candidate: string, workspaceRoot: string): string | null {
+  if (!existsSync(candidate)) return null
+  try {
+    const root = realpathSync.native(workspaceRoot)
+    const target = realpathSync.native(candidate)
+    const rel = relative(root, target)
+    if (rel === '') return target
+    if (isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) return null
+    return target
+  } catch {
+    return null
+  }
+}
+
+function normalizeLine(value: unknown): number | null {
+  const line = Math.trunc(Number(value))
+  return Number.isFinite(line) && line > 0 ? Math.min(line, 10_000_000) : null
 }
 

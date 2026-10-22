@@ -2,7 +2,10 @@ import { useCallback, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import {
   Bookmark,
+  Box,
   Cookie,
+  ChevronsLeft,
+  ChevronsRight,
   History,
   Monitor,
   Network,
@@ -39,6 +42,7 @@ import type { LogCounts } from '@renderer/hooks/useLogStore'
 import { AiAssistantPanel } from '@renderer/components/AiAssistantPanel'
 import { BookmarksPanel } from '@renderer/components/BookmarksPanel'
 import { ConsolePanel } from '@renderer/components/ConsolePanel'
+import { InspectorPanel } from '@renderer/components/InspectorPanel'
 import { DesignPanel, type DesignTarget } from '@renderer/components/DesignPanel'
 import { HistoryPanel } from '@renderer/components/HistoryPanel'
 import { InterceptorPanel } from '@renderer/components/InterceptorPanel'
@@ -46,7 +50,12 @@ import { ReconPanel } from '@renderer/components/ReconPanel'
 import { DefensePanel } from '@renderer/components/DefensePanel'
 import { ServersPanel } from '@renderer/components/ServersPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
-import { StoragePanel, type CookieRecord, type StorageArea } from '@renderer/components/StoragePanel'
+import {
+  StoragePanel,
+  type CacheArea,
+  type CookieRecord,
+  type StorageArea
+} from '@renderer/components/StoragePanel'
 import { ViewportPanel } from '@renderer/components/ViewportPanel'
 
 /** The panel the dock has selected. Same ids as the dock table, so nothing can drift. */
@@ -59,9 +68,9 @@ interface SidebarProps {
   /** Controlled so omnibox commands (`>sec`, `>design`, `>intercept`) can switch tools. */
   panel: SidebarPanel
   onPanelChange: (panel: SidebarPanel) => void
-  /** Whether the panel column is showing; the dock itself is always there. */
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  /** Whether the dock, the panel column, or the whole sidebar is showing. */
+  open: 'hidden' | 'dock' | 'open'
+  onOpenChange: (open: 'hidden' | 'dock' | 'open') => void
   /** Which edge of the workspace owns the entire dock and panel column. */
   side: 'start' | 'end'
   activeView: ViewportId
@@ -153,12 +162,18 @@ interface SidebarProps {
     onSyncChange: (enabled: boolean) => void
     cookies: CookieRecord[]
     storage: StorageArea[]
+    caches: CacheArea[]
     storageBusy: boolean
     storageError: string | null
     onRefreshStorage: () => void
     onRemoveCookie: (name: string) => void
     onRemoveStorageEntry: (area: StorageArea['id'], key: string) => void
+    onSetStorageEntry: (area: StorageArea['id'], key: string, value: string) => void
+    onRemoveCache: (name: string) => void
+    onClearCache: () => void
     onClearSiteStorage: () => void
+    guestId: number | null
+    onOpenGuestDevTools: () => void
   }
 }
 
@@ -171,6 +186,7 @@ const ICONS: Record<DockToolId, typeof Terminal> = {
   ai: Sparkles,
   bookmarks: Bookmark,
   history: History,
+  elements: Box,
   console: Terminal,
   interceptor: Network,
   servers: Server,
@@ -261,15 +277,17 @@ export function Sidebar({
   const aiBrand = aiSite(ai.provider)
   /** The AI panel over a mobile preview floats instead of taking a column. */
   const overlay = panel === 'ai' && dev && activeView === 'mobile'
-  const showPanel = open && !overlay
+  const dockVisible = open !== 'hidden'
+  const showPanel = open === 'open' && !overlay
 
   const select = (id: SidebarPanel): void => {
-    if (id === panel && open) {
-      onOpenChange(false)
+    if (id === panel && open === 'open') {
+      onOpenChange('dock')
       return
     }
+    if (open === 'hidden') return
     onPanelChange(id)
-    onOpenChange(true)
+    onOpenChange('open')
   }
 
   return (
@@ -277,16 +295,38 @@ export function Sidebar({
       data-testid="sidebar-shell"
       data-side={side}
       className={[
-        'flex min-h-0 shrink-0',
+        'flex min-h-0 shrink-0 transition-[width] duration-200 ease-out',
         side === 'end' ? 'order-last flex-row-reverse' : 'flex-row'
       ].join(' ')}
+      style={dockVisible ? undefined : { width: 0 }}
     >
       <nav
         data-testid="dock"
         data-mode={mode}
         aria-label="Dock"
-        className="nova-glass flex w-12 shrink-0 flex-col items-center justify-start gap-1 py-2"
+          className={[
+            'nova-glass flex shrink-0 flex-col items-center justify-start gap-1 py-2 transition-[width,opacity] duration-200 ease-out',
+            dockVisible ? 'w-14 opacity-100' : 'w-0 overflow-hidden opacity-0'
+          ].join(' ')}
       >
+        <button
+          type="button"
+          data-testid="sidebar-collapse"
+          aria-label={open === 'hidden' ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={open !== 'hidden'}
+          title={open === 'hidden' ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={() => onOpenChange(open === 'hidden' ? 'open' : 'hidden')}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-white/[0.05] hover:text-ink-200"
+        >
+          {open
+            ? side === 'end'
+              ? <ChevronsRight size={16} />
+              : <ChevronsLeft size={16} />
+            : side === 'end'
+              ? <ChevronsLeft size={16} />
+              : <ChevronsRight size={16} />}
+        </button>
+
         {mainTools.map((tool) => (
           <DockButton
             key={tool.id}
@@ -296,7 +336,7 @@ export function Sidebar({
                tool, and the tooltip is where "which assistant, exactly" belongs. */
             hint={tool.id === 'ai' ? `${tool.label} - ${aiBrand.label}` : undefined}
             icon={ICONS[tool.id]}
-            active={panel === tool.id && (open || overlay)}
+            active={panel === tool.id && (open === 'open' || overlay)}
             badge={badges[tool.id]}
             mark={tool.id === 'ai' ? { brand: aiBrand.id } : undefined}
             onClick={() => select(tool.id)}
@@ -311,11 +351,29 @@ export function Sidebar({
             id={tool.id}
             label={tool.label}
             icon={ICONS[tool.id]}
-            active={panel === tool.id && open}
+            active={panel === tool.id && open === 'open'}
             onClick={() => select(tool.id)}
           />
         ))}
       </nav>
+
+      {open === 'hidden' && (
+        <button
+          type="button"
+          data-testid="sidebar-restore"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+          onClick={() => onOpenChange('open')}
+          className={[
+            'fixed top-24 z-[70] inline-flex h-12 w-5 items-center justify-center rounded-md',
+            'border border-[var(--devlens-hairline)] bg-[color-mix(in_srgb,var(--devlens-accent-base)_10%,transparent)]',
+            'text-ink-400 backdrop-blur-sm transition-colors hover:text-ink-100',
+            side === 'end' ? 'right-1' : 'left-1'
+          ].join(' ')}
+        >
+          {side === 'end' ? <ChevronsLeft size={14} /> : <ChevronsRight size={14} />}
+        </button>
+      )}
 
       {(showPanel || overlay) && (
         <aside
@@ -362,7 +420,7 @@ export function Sidebar({
               type="button"
               aria-label="Close the side panel"
               title="Close the panel"
-              onClick={() => onOpenChange(false)}
+              onClick={() => onOpenChange('dock')}
               className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-500 transition-colors hover:bg-white/5 hover:text-ink-200"
             >
               <span aria-hidden="true" className="text-[13px] leading-none">
@@ -422,8 +480,17 @@ export function Sidebar({
             <ConsolePanel
               entries={logs.entries}
               counts={logs.counts}
+              guestId={tools.guestId}
               onClear={logs.onClear}
               onOpenSource={logs.onOpenSource}
+            />
+          )}
+
+          {panel === 'elements' && (
+            <InspectorPanel
+              guestId={tools.guestId}
+              activeUrl={activeUrl}
+              onOpenExternal={tools.onOpenGuestDevTools}
             />
           )}
 
@@ -478,11 +545,15 @@ export function Sidebar({
               url={activeUrl}
               cookies={tools.cookies}
               storage={tools.storage}
+              caches={tools.caches}
               busy={tools.storageBusy}
               error={tools.storageError}
               onRefresh={tools.onRefreshStorage}
               onRemoveCookie={tools.onRemoveCookie}
               onRemoveEntry={tools.onRemoveStorageEntry}
+              onSetEntry={tools.onSetStorageEntry}
+              onRemoveCache={tools.onRemoveCache}
+              onClearCache={tools.onClearCache}
               onClearSite={tools.onClearSiteStorage}
             />
           )}
@@ -554,10 +625,10 @@ function DockButton({ id, label, icon: Icon, active, onClick, badge, mark, hint 
              a provider tint that would ignore the rail's state. */
           className={[MARK_BOX, 'h-5 w-5'].join(' ')}
         >
-          <AiMark site={mark.brand} size={17} />
+          <AiMark site={mark.brand} size={16} />
         </span>
       ) : (
-        <Icon size={15} />
+        <Icon size={16} />
       )}
       {badge && (
         <span

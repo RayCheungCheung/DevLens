@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc'
 import type {
   ConsoleLevel,
   ConsoleLogEntry,
+  FaviconUpdatedEvent,
   GuestRegistration,
   GuestStatusEvent,
   NetworkEntry,
@@ -11,6 +12,10 @@ import type {
 } from '../shared/types'
 import { isMonitoringEnabled, noteLeaseConsole } from './mode'
 import { handleExternalProtocol } from './downloads'
+import { preferencesNow } from './preferences'
+import { findHotkeyAction } from '../shared/hotkeys'
+import { faviconFromPageEvent } from './favicon'
+import { desktopChromeUserAgent } from './user-agent'
 
 type Emit = (channel: string, payload: unknown) => void
 
@@ -54,17 +59,25 @@ export function viewIdForGuest(guestId?: number): ViewportId | null {
   return guestViewIds.get(guestId) ?? null
 }
 
-/**
- * Failure entries for the Console & Network panel. The interceptor owns the session
- * hooks now, so it feeds this stream; keeping the helper here means the panel contract
- * stays in one place.
- */
 export function emitNetworkEntry(entry: NetworkEntry): void {
   emitter(IPC.networkEntry, entry)
 }
 
-/** Schemes a page inside a guest may navigate to. Everything else is not a web navigation. */
+/** Schemes a page inside a guest may navigate to. */
 const NAVIGABLE = /^(https?|file|about|blob|data):/i
+
+function canNavigateFrom(currentUrl: string, target: string): boolean {
+  if (!NAVIGABLE.test(target)) return false
+  if (!/^file:/i.test(target)) return true
+  return !/^https?:/i.test(currentUrl)
+}
+
+/**
+    return false
+  } catch {
+    return false
+  }
+}
 
 /** Schemes a popup may open. `about:blank` is the first hop of several OAuth SDKs. */
 function isOpenable(url: string): boolean {
@@ -107,6 +120,12 @@ function popupWindowOptions(partition: string | undefined): Electron.BrowserWind
  * navigate itself into a local scheme or into the shell's own pages.
  */
 function hardenPopup(window: BrowserWindow, partition: string | undefined): void {
+  /**
+   * The popup's own webContents keeps the app's Electron UA unless told otherwise, and a provider that
+   * sees it on its sign-in pages refuses the flow - the "This browser or app may not be secure" screen.
+   * Forcing the session's desktop Chrome UA here covers the window that `did-create-window` hands us.
+   */
+  window.webContents.setUserAgent(desktopChromeUserAgent())
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isOpenable(url)) return { action: 'allow', overrideBrowserWindowOptions: popupWindowOptions(partition) }
     void handleExternalProtocol(window.webContents, url)
@@ -173,9 +192,16 @@ export function instrumentGuest(contents: WebContents): void {
    * `devlens:` pages, `javascript:`, arbitrary protocol handlers).
    */
   contents.on('will-navigate', (event, target) => {
-    if (!NAVIGABLE.test(target)) {
+    if (!canNavigateFrom(contents.getURL(), target)) {
       event.preventDefault()
       void handleExternalProtocol(contents, target)
+    }
+  })
+
+  contents.on('will-redirect', (event) => {
+    if (!canNavigateFrom(contents.getURL(), event.url)) {
+      event.preventDefault()
+      void handleExternalProtocol(contents, event.url)
     }
   })
 
@@ -203,6 +229,29 @@ export function instrumentGuest(contents: WebContents): void {
   contents.on('did-start-loading', () => emitStatus(guestId, guestViewIds.get(guestId), 'loading'))
   contents.on('did-finish-load', () => emitStatus(guestId, guestViewIds.get(guestId), 'ready'))
   contents.on('did-navigate', (_event, url) => emitStatus(guestId, guestViewIds.get(guestId), 'ready', url))
+  contents.on('page-favicon-updated', (_event, favicons) => {
+    const pageUrl = contents.getURL()
+    let host = ''
+    try {
+      host = new URL(pageUrl).host
+    } catch {
+      return
+    }
+    void faviconFromPageEvent(pageUrl, favicons).then((result) => {
+      if (!result.dataUrl || contents.isDestroyed()) return
+      try {
+        if (new URL(contents.getURL()).host !== host) return
+      } catch {
+        return
+      }
+      emitter(IPC.faviconUpdated, {
+        pageUrl,
+        host,
+        dataUrl: result.dataUrl,
+        source: result.source
+      } satisfies FaviconUpdatedEvent)
+    })
+  })
 
   /**
    * Redirects, reported as they happen.
@@ -217,7 +266,7 @@ export function instrumentGuest(contents: WebContents): void {
   })
   contents.on('will-redirect', (details) => {
     if (!details.isMainFrame) return
-    if (!NAVIGABLE.test(details.url)) {
+    if (!canNavigateFrom(contents.getURL(), details.url)) {
       details.preventDefault()
       void handleExternalProtocol(contents, details.url)
       return
@@ -234,14 +283,16 @@ export function instrumentGuest(contents: WebContents): void {
    */
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
-    if (input.key === 'F5' || ((input.control || input.meta) && !input.shift && !input.alt && input.key.toLowerCase() === 'r')) {
-      event.preventDefault()
-      emitter(IPC.reloadViewportsRequested, { webContentsId: guestId })
-      return
-    }
-    if (!(input.control || input.meta) || input.shift || input.key.toLowerCase() !== 'f') return
+    const action = findHotkeyAction(preferencesNow().hotkeys.bindings, {
+      key: input.key,
+      ctrlKey: input.control === true,
+      metaKey: input.meta === true,
+      shiftKey: input.shift === true,
+      altKey: input.alt === true
+    })
+    if (!action) return
     event.preventDefault()
-    emitter(IPC.findInPageRequested, { webContentsId: guestId })
+    emitter(IPC.guestHotkeyTriggered, action)
   })
 
   contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -297,3 +348,4 @@ function toLevel(level: ConsoleLevel | string | number): ConsoleLevel {
       return 'log'
   }
 }
+

@@ -17,6 +17,8 @@ import {
   Layers,
   LayoutPanelTop,
   Search,
+  ShieldCheck,
+  ShieldX,
   SlidersHorizontal,
   SquareDashedMousePointer,
   X
@@ -26,6 +28,7 @@ import {
   parseOmnibox,
   resolveSearchTarget,
   resolvePrefixBadge,
+  shouldArmShortcutSearch,
   type OmniboxAction,
   type OmniboxSuggestion,
   type SuggestionIcon
@@ -37,7 +40,7 @@ import { DevLensMark } from '@renderer/components/DevLensMark'
 import { FaviconMark, MARK_BOX, PrefixMark } from '@renderer/components/PrefixIcons'
 import { SiteProtectionPanel } from '@renderer/components/SiteProtectionPanel'
 import type { ProtectionLevel } from '@shared/protection'
-import type { ProtectionState } from '@shared/types'
+import type { ProtectionState, PermissionEntry, WimhState } from '@shared/types'
 
 interface OmniboxProps {
   value: string
@@ -180,6 +183,8 @@ export function Omnibox({
   const [focused, setFocused] = useState(false)
   /** Where the input sits inside the field, so the ghost layer can line up with its text. */
   const [fieldBox, setFieldBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
+  const [permissions, setPermissions] = useState<PermissionEntry[]>([])
+  const [wimh, setWimh] = useState<WimhState | null>(null)
 
   /**
    * The hero presentation.
@@ -225,6 +230,12 @@ export function Omnibox({
   useEffect(() => {
     setHighlight(0)
   }, [value])
+
+  useEffect(() => {
+    if (!site?.url) return
+    void window.devlens.permissionsQuery(site.url).then(setPermissions).catch(() => setPermissions([]))
+    void window.devlens.wimhState().then(setWimh).catch(() => setWimh(null))
+  }, [site?.url])
 
   useEffect(
     () => () => {
@@ -420,6 +431,17 @@ export function Omnibox({
   }
 
   const submit = (options?: { newTab?: boolean }): void => {
+    /**
+     * First Enter arms a searchable site shortcut; the second empty Enter opens its home page.
+     * The trailing space is deliberate state: `#yt` + Enter becomes `#yt ` and keeps focus, while
+     * an already spaced `#yt ` submits normally when no query has been typed.
+     */
+    if (shouldArmShortcutSearch(value, customs?.shortcuts)) {
+      onChange(`${value} `)
+      setOpen(true)
+      inputRef.current?.focus()
+      return
+    }
     if (listOpen && suggestions[highlight]) {
       run(suggestions[highlight], options)
       return
@@ -528,8 +550,8 @@ export function Omnibox({
         }
       : siteAtRest
         ? {
-            icon: 'favicon',
-            title: `${siteLabel(siteUrl)} - page protection`,
+            icon: site?.secure ? 'shield-secure' : 'shield-insecure',
+            title: `${siteLabel(siteUrl)} - ${site?.secure ? 'connection secure' : 'not secure'}`,
             token: null,
             kind: 'site' as const
           }
@@ -544,8 +566,8 @@ export function Omnibox({
     <form
       ref={formRef}
       className={[
-        'nova-field relative flex min-w-0 items-center rounded-full',
-        hero ? 'h-12 w-full gap-3 px-3.5' : 'mx-1 flex-1 gap-2 px-2.5 py-1.5'
+        'nova-field relative flex min-w-0 items-center rounded-tl-full rounded-tr-full rounded-bl-none rounded-br-none',
+        hero ? 'dashboard-search h-12 w-full gap-3 px-3.5' : 'mx-1 flex-1 gap-2 px-2.5 py-1'
       ].join(' ')}
       onSubmit={(event) => {
         event.preventDefault()
@@ -564,7 +586,11 @@ export function Omnibox({
         data-prefix-token={leading.token ?? ''}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label="Search engines and navigation"
+        aria-label={
+          siteMenu
+            ? `${leading.title} - site information and protection`
+            : 'Search engines and navigation'
+        }
         title={`${leading.title} - pick a search engine or where to go`}
         onClick={() => setMenuOpen((value) => !value)}
         /* A fixed box so switching between a site favicon, the default engine and a prefix brand
@@ -577,6 +603,8 @@ export function Omnibox({
           leading.kind === 'default' ||
           leading.kind === 'devlens'
             ? 'bg-[var(--devlens-accent-soft)] text-[var(--devlens-accent)]'
+            : leading.kind === 'site' && site && !site.secure
+              ? 'bg-amber-400/10 text-amber-300'
             : 'bg-white/[0.04] text-ink-400'
         ].join(' ')}
       >
@@ -607,11 +635,21 @@ export function Omnibox({
               className="text-[var(--devlens-accent)]"
             />
           ) : leading.kind === 'site' ? (
-            <FaviconMark
-              label={siteLabel(siteUrl)}
-              iconUrl={site?.iconUrl}
-              size={hero ? 18 : 16}
-            />
+            <span
+              data-testid="omnibox-connection-shield"
+              data-secure={site?.secure ? 'true' : 'false'}
+              title={site?.secure ? 'Connection secure' : 'Connection not secure'}
+              className={[
+                'flex h-full w-full items-center justify-center',
+                site?.secure ? 'text-[var(--devlens-accent)]' : 'text-amber-300'
+              ].join(' ')}
+            >
+              {site?.secure ? (
+                <ShieldCheck size={hero ? 18 : 16} strokeWidth={2.2} />
+              ) : (
+                <ShieldX size={hero ? 18 : 16} strokeWidth={2.2} />
+              )}
+            </span>
           ) : defaultSearch.mark ? (
             <PrefixMark icon={defaultSearch.mark} size={hero ? 20 : 18} />
           ) : defaultSearch.entry ? (
@@ -654,10 +692,15 @@ export function Omnibox({
               }}
               onLevelChange={(level) => onProtectionLevel?.(level)}
               onOpenSettings={openSettingsCenter}
+              permissions={permissions}
+              onPermissionToggle={(perm, allowed) => setPermissions(prev => 
+                prev.map(p => p.permission === perm ? { ...p, granted: allowed } : p)
+              )}
+              wimh={wimh}
             />
           ) : (
             <>
-          <p className="border-b border-[var(--devlens-hairline)] px-3 py-1.5 text-[10px] tracking-wide text-ink-500 uppercase">
+          <p className="border-b border-[var(--devlens-hairline)] px-3 py-1 text-[10px] tracking-wide text-ink-500 uppercase">
             Search with
           </p>
           <div className="py-1">
@@ -674,7 +717,7 @@ export function Omnibox({
                   data-engine-token={`@${engine.keyword}`}
                   onClick={() => switchEngine(engine)}
                   className={[
-                    'flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors',
+                    'flex w-full items-center gap-2.5 px-3 py-1 text-left transition-colors',
                     current ? 'bg-[var(--devlens-accent-soft)]' : 'hover:bg-white/[0.04]'
                   ].join(' ')}
                 >
@@ -711,7 +754,7 @@ export function Omnibox({
             )}
           </div>
 
-          <p className="border-t border-b border-[var(--devlens-hairline)] px-3 py-1.5 text-[10px] tracking-wide text-ink-500 uppercase">
+          <p className="border-t border-b border-[var(--devlens-hairline)] px-3 py-1 text-[10px] tracking-wide text-ink-500 uppercase">
             Go to
           </p>
           <div className="py-1">
@@ -725,7 +768,7 @@ export function Omnibox({
                   aria-label={section.label}
                   data-testid={id(`omnibox-section-${section.id}`)}
                   onClick={() => goToSection(section.id)}
-                  className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.04]"
+                  className="flex w-full items-center gap-2.5 px-3 py-1 text-left transition-colors hover:bg-white/[0.04]"
                 >
                   <Icon size={13} className="shrink-0 text-ink-500" />
                   <span className="min-w-0 flex-1 truncate text-[11px] text-ink-200">
@@ -831,7 +874,7 @@ export function Omnibox({
           data-omnibox-list
           role="listbox"
           className={[
-            'nova-glass absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-y-auto rounded-xl py-1.5 shadow-2xl',
+            'nova-glass absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-y-auto rounded-xl py-1 shadow-2xl',
             hero ? 'max-h-96' : 'max-h-80'
           ].join(' ')}
         >
@@ -850,7 +893,7 @@ export function Omnibox({
                     run(suggestion, { newTab: event.altKey || event.ctrlKey || event.metaKey })
                   }}
                   className={[
-                    'flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors',
+                    'flex w-full items-center gap-2.5 px-3 py-1 text-left transition-colors',
                     index === highlight
                       ? 'bg-[var(--devlens-accent-soft)]'
                       : 'hover:bg-white/[0.04]'

@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, session } from 'electron'
-import type { BrowserProfile, ProfileAvatar } from '../shared/types'
+import type { BrowserProfile, BrowserProfilePatch, ProfileAvatar } from '../shared/types'
+import { profileDataDirPathFor } from './profile-paths'
 
 /**
  * Browser profiles.
@@ -51,7 +53,13 @@ function load(): void {
         activeId?: string
         askOnStartup?: boolean
       }
-      profiles = Array.isArray(parsed.profiles) ? parsed.profiles.slice(0, LIMIT) : []
+      profiles = Array.isArray(parsed.profiles)
+        ? parsed.profiles
+            .map(sanitizeStoredProfile)
+            .filter((profile): profile is BrowserProfile => profile !== null)
+            .filter((profile, index, all) => all.findIndex((entry) => entry.id === profile.id) === index)
+            .slice(0, LIMIT)
+        : []
       activeId = typeof parsed.activeId === 'string' ? parsed.activeId : BUILTIN_ID
       askOnStartup = parsed.askOnStartup !== false
     }
@@ -75,6 +83,40 @@ function load(): void {
   }
 
   if (!profiles.some((profile) => profile.id === activeId)) activeId = BUILTIN_ID
+}
+
+/** A profile registry is local state, but a hand-edited or corrupted file must not name
+ * an arbitrary Electron partition or make the identity selector render unsafe values. */
+function sanitizeStoredProfile(input: unknown): BrowserProfile | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = input as Partial<BrowserProfile>
+  const id = typeof raw.id === 'string' ? raw.id : ''
+  if (!/^[a-z0-9_-]{1,80}$/i.test(id)) return null
+  const expectedPartition =
+    id === BUILTIN_ID ? defaultPartition : `persist:devlens-profile-${id}`
+  return {
+    id,
+    name:
+      typeof raw.name === 'string' && raw.name.trim()
+        ? raw.name.trim().slice(0, 32)
+        : id === BUILTIN_ID
+          ? 'Default'
+          : `Profile ${id.slice(0, 8)}`,
+    partition: expectedPartition,
+    createdAt:
+      typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt)
+        ? raw.createdAt
+        : Date.now(),
+    lastUsedAt:
+      typeof raw.lastUsedAt === 'number' && Number.isFinite(raw.lastUsedAt)
+        ? raw.lastUsedAt
+        : Date.now(),
+    active: false,
+    removable: id === BUILTIN_ID ? false : raw.removable !== false,
+    ...(AVATARS.includes(raw.avatar as ProfileAvatar)
+      ? { avatar: raw.avatar as ProfileAvatar }
+      : {})
+  }
 }
 
 function scheduleSave(): void {
@@ -200,6 +242,25 @@ export function switchProfile(id: string): BrowserProfile[] {
   return withActiveFlag(profiles)
 }
 
+/** Renames or re-avatars one profile without changing the active identity. */
+export function updateProfile(id: string, patch: BrowserProfilePatch): BrowserProfile[] {
+  load()
+  const target = profiles.find((profile) => profile.id === id)
+  if (!target) return withActiveFlag(profiles)
+  const name =
+    typeof patch.name === 'string' && patch.name.trim()
+      ? patch.name.trim().slice(0, 32)
+      : target.name
+  const avatar = AVATARS.includes(patch.avatar as ProfileAvatar)
+    ? (patch.avatar as ProfileAvatar)
+    : target.avatar
+  profiles = profiles.map((profile) =>
+    profile.id === id ? { ...profile, name, avatar } : profile
+  )
+  scheduleSave()
+  return withActiveFlag(profiles)
+}
+
 /** Deleting wipes the profile's storage: a removed identity leaves nothing behind. */
 export async function deleteProfile(id: string): Promise<BrowserProfile[]> {
   load()
@@ -213,6 +274,20 @@ export async function deleteProfile(id: string): Promise<BrowserProfile[]> {
     await ses.clearAuthCache()
   } catch (error) {
     console.warn('[devlens] could not wipe the deleted profile', error)
+  }
+
+  // Chromium's clearStorageData covers the session partition; preferences, history and
+  // bookmarks live in our own per-profile directory, so a profile delete must remove that
+  // directory as well or an apparently deleted identity leaves readable local records.
+  try {
+    await rm(profileDataDirPathFor(id), {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50
+    })
+  } catch (error) {
+    console.warn('[devlens] could not remove the deleted profile data directory', error)
   }
 
   profiles = profiles.filter((profile) => profile.id !== id)

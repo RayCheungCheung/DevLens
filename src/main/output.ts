@@ -6,8 +6,15 @@ import type { SaveTextRequest, SaveTextResult } from '../shared/types'
 
 /** Keeps a user supplied name usable as a file name. */
 function safeName(filename: string): string {
-  const cleaned = basename(filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()
-  return cleaned.length > 0 ? cleaned : 'devlens-export.txt'
+  let cleaned = basename(filename)
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .trim()
+    .replace(/[. ]+$/, '')
+  if (!cleaned || cleaned === '.' || cleaned === '..') cleaned = 'devlens-export.txt'
+  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(cleaned)) {
+    cleaned = `_${cleaned}`
+  }
+  return cleaned
 }
 
 /**
